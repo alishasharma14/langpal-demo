@@ -1,0 +1,11 @@
+{
+  "name": "langpal-webrtc",
+  "version": "1.0.0",
+  "description": "WebRTC signaling server + client for LangPal",
+  "scripts": {
+    "start": "node server/signaling.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

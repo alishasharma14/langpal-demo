@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LangPal WebRTC</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0f0f0f;
+      color: #eee;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 24px;
+      gap: 16px;
+    }
+
+    h1 { font-size: 1.4rem; letter-spacing: 0.05em; }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    button {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.95rem;
+      background: #3b82f6;
+      color: #fff;
+      transition: background 0.15s;
+    }
+    button:hover { background: #2563eb; }
+    button:disabled { background: #555; cursor: default; }
+    button.danger { background: #ef4444; }
+    button.danger:hover { background: #dc2626; }
+
+    .meta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .pill {
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 0.95rem;
+    }
+
+    .videos {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .video-wrapper {
+      position: relative;
+      background: #1a1a1a;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    video {
+      width: 480px;
+      max-width: 90vw;
+      aspect-ratio: 16/9;
+      display: block;
+      background: #000;
+    }
+
+    .label {
+      position: absolute;
+      bottom: 8px;
+      left: 10px;
+      font-size: 0.8rem;
+      background: rgba(0,0,0,0.55);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    #status {
+      font-size: 0.85rem;
+      color: #aaa;
+      min-height: 1.2em;
+    }
+  </style>
+</head>
+<body>
+  <h1>LangPal WebRTC</h1>
+
+  <div class="controls">
+    <button id="reloadBtn">Reload Page</button>
+  </div>
+
+  <p id="status">Not connected</p>
+  <div class="meta">
+    <div class="pill">Room: <span id="roomLabel">unknown</span></div>
+    <div class="pill">State: <span id="connectionLabel">Disconnected</span></div>
+  </div>
+
+  <div class="videos">
+    <div class="video-wrapper">
+      <video id="localVideo" autoplay muted playsinline></video>
+      <span class="label">You</span>
+    </div>
+    <div class="video-wrapper">
+      <video id="remoteVideo" autoplay playsinline></video>
+      <span class="label">Remote</span>
+    </div>
+  </div>
+
+  <script type="module">
+    import { SignalingClient } from './signaling-client.js';
+    import { WebRTCClient } from './webrtc.js';
+
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const SIGNALING_URL = `${proto}//${location.host}`;
+
+    const reloadBtn  = document.getElementById('reloadBtn');
+    const statusEl   = document.getElementById('status');
+    const roomLabel = document.getElementById('roomLabel');
+    const connectionLabel = document.getElementById('connectionLabel');
+    const localVideo  = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const params = new URLSearchParams(window.location.search);
+    const roomId = params.get('room');
+    let signaling = null;
+    let webrtc    = null;
+    let hasPlacedCall = false;
+    let peerReadyPending = false;
+
+    function setStatus(msg) { statusEl.textContent = msg; }
+    function setConnectionState(state) { connectionLabel.textContent = state; }
+    function resetVideos() {
+      localVideo.srcObject = null;
+      remoteVideo.srcObject = null;
+      hasPlacedCall = false;
+      setConnectionState('Disconnected');
+    }
+
+    async function placeCall() {
+      if (!webrtc || hasPlacedCall || !webrtc.localStream) {
+        peerReadyPending = true;
+        return;
+      }
+      hasPlacedCall = true;
+      peerReadyPending = false;
+      setStatus('Connecting to partner...');
+      setConnectionState('Connecting');
+      await webrtc.call();
+    }
+
+    function leaveCall() {
+      webrtc?.hangup();
+      signaling?.disconnect();
+      resetVideos();
+    }
+
+    async function joinRoom() {
+      if (!roomId) {
+        setStatus('Missing room ID.');
+        setConnectionState('Disconnected');
+        return;
+      }
+
+      roomLabel.textContent = roomId;
+      setStatus('Connecting to signaling server...');
+      setConnectionState('Connecting');
+      signaling = new SignalingClient(SIGNALING_URL);
+      webrtc = new WebRTCClient(signaling);
+
+      webrtc.onRemoteStream = (stream) => {
+        remoteVideo.srcObject = stream;
+        setStatus('Connected — P2P stream active');
+        setConnectionState('Connected');
+      };
+
+      signaling.on('joined', ({ peerCount }) => {
+        setStatus(
+          peerCount > 1
+            ? `Joined room "${roomId}" — partner present, connecting...`
+            : `Joined room "${roomId}" — waiting for partner...`
+        );
+      });
+
+      signaling.on('peer-ready', async () => {
+        try {
+          await placeCall();
+        } catch (error) {
+          console.error('Failed to place call:', error);
+          setStatus('Could not connect call.');
+        }
+      });
+
+      signaling.on('peer-left', () => {
+        remoteVideo.srcObject = null;
+        hasPlacedCall = false;
+        peerReadyPending = false;
+        setStatus('Partner left the room.');
+        setConnectionState('Disconnected');
+      });
+
+      signaling.on('disconnect', () => {
+        setStatus('Signaling disconnected');
+        setConnectionState('Disconnected');
+      });
+
+      try {
+        await signaling.connect(roomId);
+      } catch {
+        setStatus('Failed to connect to signaling server.');
+        setConnectionState('Disconnected');
+        return;
+      }
+
+      try {
+        const stream = await webrtc.startLocalStream();
+        localVideo.srcObject = stream;
+        if (peerReadyPending) {
+          await placeCall();
+        }
+      } catch (error) {
+        console.error('Failed to get media devices:', error);
+        setStatus('Camera/mic access failed.');
+        setConnectionState('Disconnected');
+        return;
+      }
+    }
+
+    reloadBtn.addEventListener('click', () => {
+      leaveCall();
+      window.location.reload();
+    });
+
+    window.addEventListener('beforeunload', () => {
+      leaveCall();
+    });
+
+    joinRoom();
+  </script>
+</body>
+</html>
