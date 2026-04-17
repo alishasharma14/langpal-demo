@@ -174,7 +174,7 @@ function App() {
       redirectUrl.searchParams.set('practice', languagesRef.current.practiceLanguage);
       redirectUrl.searchParams.set('returnTo', window.location.origin);
       console.log('[FRONTEND] Redirecting to WebRTC', redirectUrl.toString());
-      window.open(redirectUrl.toString(), "_blank");
+      window.location.href = redirectUrl.toString();
     });
 
     socket.on('disconnect', () => {
