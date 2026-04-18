@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import './styles.css';
+import { SignalingClient } from './signalingClient.js';
+import { WebRTCClient } from './webrtc.js';
 
 const LANGUAGES = [
   'Arabic', 'English', 'French', 'German', 'Hindi',
@@ -8,7 +10,7 @@ const LANGUAGES = [
 ];
 
 const MATCHMAKING_URL = 'http://localhost:3000';
-const WEBRTC_URL = 'http://localhost:8080';
+const SIGNALING_WS_URL = 'ws://localhost:8080';
 
 function getOrCreateUserId() {
   const storedUserId = window.sessionStorage.getItem('langpalUserId');
@@ -22,7 +24,6 @@ function getOrCreateUserId() {
 
 function getBootstrapState() {
   const params = new URLSearchParams(window.location.search);
-
   return {
     nativeLanguage: params.get('native') ?? '',
     practiceLanguage: params.get('practice') ?? '',
@@ -38,6 +39,9 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [statusMessage, setStatusMessage] = useState('Select languages and click Start to connect.');
+  // 'idle' | 'queued' | 'connecting' | 'connected' | 'partner-left'
+  const [callStatus, setCallStatus] = useState('idle');
+
   const messagesEndRef = useRef(null);
   const socketRef = useRef(null);
   const userIdRef = useRef(getOrCreateUserId());
@@ -46,11 +50,106 @@ function App() {
     practiceLanguage: bootstrapState.current.practiceLanguage,
   });
 
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  const signalingRef = useRef(null);
+  const webrtcClientRef = useRef(null);
+  const hasPlacedCallRef = useRef(false);
+  const peerReadyPendingRef = useRef(false);
+
   const isStartDisabled = !nativeLanguage || !practiceLanguage;
 
   useEffect(() => {
     languagesRef.current = { nativeLanguage, practiceLanguage };
   }, [nativeLanguage, practiceLanguage]);
+
+  const leaveCall = () => {
+    webrtcClientRef.current?.hangup();
+    signalingRef.current?.disconnect();
+    webrtcClientRef.current = null;
+    signalingRef.current = null;
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+    hasPlacedCallRef.current = false;
+    peerReadyPendingRef.current = false;
+    setCallStatus('idle');
+  };
+
+  const placeCall = async () => {
+    const webrtc = webrtcClientRef.current;
+    if (!webrtc || hasPlacedCallRef.current || !webrtc.localStream) {
+      peerReadyPendingRef.current = true;
+      return;
+    }
+    hasPlacedCallRef.current = true;
+    peerReadyPendingRef.current = false;
+    setStatusMessage('Connecting to partner...');
+    await webrtc.call();
+  };
+
+  const joinRoom = async (roomId) => {
+    const signaling = new SignalingClient(SIGNALING_WS_URL);
+    const webrtc = new WebRTCClient(signaling);
+    signalingRef.current = signaling;
+    webrtcClientRef.current = webrtc;
+    hasPlacedCallRef.current = false;
+    peerReadyPendingRef.current = false;
+
+    webrtc.onRemoteStream = (stream) => {
+      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = stream;
+      setCallStatus('connected');
+      setStatusMessage('Connected — P2P stream active');
+    };
+
+    signaling.on('joined', ({ peerCount }) => {
+      setStatusMessage(
+        peerCount > 1
+          ? 'Partner present, connecting...'
+          : 'Waiting for partner to join...'
+      );
+    });
+
+    signaling.on('peer-ready', async () => {
+      try {
+        await placeCall();
+      } catch (err) {
+        console.error('Failed to place call:', err);
+        setStatusMessage('Could not connect call.');
+      }
+    });
+
+    signaling.on('peer-left', () => {
+      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+      hasPlacedCallRef.current = false;
+      peerReadyPendingRef.current = false;
+      setCallStatus('partner-left');
+      setStatusMessage('Partner left the room.');
+    });
+
+    signaling.on('disconnect', () => {
+      setStatusMessage('Signaling disconnected.');
+      setCallStatus('idle');
+    });
+
+    try {
+      await signaling.connect(roomId);
+    } catch {
+      setStatusMessage('Failed to connect to signaling server.');
+      return;
+    }
+
+    try {
+      const stream = await webrtc.startLocalStream();
+      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+      setCallStatus('connecting');
+      if (peerReadyPendingRef.current) {
+        await placeCall();
+      }
+    } catch (err) {
+      console.error('Failed to get media devices:', err);
+      setStatusMessage('Camera/mic access failed.');
+    }
+  };
 
   const handleStartChat = () => {
     if (isStartDisabled || !socketRef.current) return;
@@ -73,6 +172,7 @@ function App() {
 
   const handleNext = () => {
     if (!socketRef.current) return;
+    leaveCall();
 
     console.log('[FRONTEND] Emitting next_partner', {
       userId: userIdRef.current,
@@ -92,7 +192,6 @@ function App() {
 
   const handleSendMessage = () => {
     if (!inputText.trim() || !isChatActive) return;
-
     const newUserMessage = { role: 'you', text: inputText.trim() };
     setMessages((prev) => [...prev, newUserMessage]);
     setInputText('');
@@ -112,14 +211,6 @@ function App() {
   }, [messages]);
 
   useEffect(() => {
-    console.log(`TEST FLOW:
-1. Open 2 tabs
-2. Click Start in both
-3. Check backend logs for MATCH
-4. Verify both tabs have same roomId
-5. Close one tab -> check DISCONNECT
-6. Click Start again -> verify new match`);
-
     const socket = io(MATCHMAKING_URL, {
       transports: ['websocket'],
     });
@@ -154,6 +245,7 @@ function App() {
 
     socket.on('queued', ({ message }) => {
       setIsChatActive(true);
+      setCallStatus('queued');
       setStatusMessage(message || 'Waiting for a partner...');
     });
 
@@ -163,18 +255,8 @@ function App() {
 
     socket.on('match_found', ({ matchId }) => {
       const roomId = String(matchId);
-      console.log('[FRONTEND] match_found received', {
-        userId: userIdRef.current,
-        roomId,
-      });
-      const redirectUrl = new URL(WEBRTC_URL);
-      redirectUrl.searchParams.set('room', roomId);
-      redirectUrl.searchParams.set('userId', userIdRef.current);
-      redirectUrl.searchParams.set('native', languagesRef.current.nativeLanguage);
-      redirectUrl.searchParams.set('practice', languagesRef.current.practiceLanguage);
-      redirectUrl.searchParams.set('returnTo', window.location.origin);
-      console.log('[FRONTEND] Redirecting to WebRTC', redirectUrl.toString());
-      window.location.href = redirectUrl.toString();
+      console.log('[FRONTEND] match_found received', { userId: userIdRef.current, roomId });
+      joinRoom(roomId);
     });
 
     socket.on('disconnect', () => {
@@ -185,8 +267,12 @@ function App() {
     return () => {
       socket.disconnect();
       socketRef.current = null;
+      leaveCall();
     };
   }, []);
+
+  const showLocalVideo = callStatus === 'connecting' || callStatus === 'connected' || callStatus === 'partner-left';
+  const showRemoteVideo = callStatus === 'connected';
 
   return (
     <div className="app-container">
@@ -239,14 +325,26 @@ function App() {
         </div>
 
         <div className="video-grid">
-          <div className="video-card stranger-video">
-            {isChatActive
-              ? `Stranger's Video`
-              : 'Waiting for connection...'
-            }
+          <div className={`video-card stranger-video${showRemoteVideo ? ' video-active' : ''}`}>
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              style={{ display: showRemoteVideo ? 'block' : 'none' }}
+            />
+            {!showRemoteVideo && (
+              <span>{isChatActive ? statusMessage : 'Waiting for connection...'}</span>
+            )}
           </div>
-          <div className="video-card you-video">
-            You
+          <div className={`video-card you-video${showLocalVideo ? ' video-active' : ''}`}>
+            <video
+              ref={localVideoRef}
+              autoPlay
+              muted
+              playsInline
+              style={{ display: showLocalVideo ? 'block' : 'none' }}
+            />
+            {!showLocalVideo && <span>You</span>}
           </div>
         </div>
       </div>
