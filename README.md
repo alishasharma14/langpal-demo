@@ -24,6 +24,42 @@ The demo uses these ports consistently:
 - Matchmaking backend: `3000`
 - WebRTC app: `8080`
 
+## Environment Setup
+
+Each repo requires a `.env` file. Copy the example and fill in the values:
+
+```bash
+cp basic-ui/.env.example basic-ui/.env
+cp langpal-matchmaking-backend/.env.example langpal-matchmaking-backend/.env
+cp langpal-webrtc/.env.example langpal-webrtc/.env
+```
+
+### `basic-ui/.env`
+
+```env
+VITE_MATCHMAKING_URL=http://localhost:3000
+VITE_SIGNALING_WS_URL=ws://localhost:8080
+```
+
+### `langpal-matchmaking-backend/.env`
+
+```env
+PORT=3000
+CORS_ORIGIN=http://localhost:5173
+
+# Optional — omit to use in-memory mode
+SUPABASE_URL=your_supabase_url_here
+SUPABASE_KEY=your_supabase_anon_key_here
+```
+
+`CORS_ORIGIN` accepts a comma-separated list if you need to allow multiple origins (e.g. `http://localhost:5173,https://your-app.example.com`).
+
+### `langpal-webrtc/.env`
+
+```env
+PORT=8080
+```
+
 ## Install
 
 Run installs once in each repo:
@@ -69,13 +105,7 @@ The original backend was built to use Supabase for:
 - `waiting_queue`
 - `matches`
 
-If you want to run the original database-backed version, create a `.env` file inside `langpal-matchmaking-backend` with:
-
-```bash
-SUPABASE_URL=your_supabase_url_here
-SUPABASE_KEY=your_supabase_key_here
-PORT=3000
-```
+If you want to run the original database-backed version, add your Supabase credentials to `langpal-matchmaking-backend/.env` (see the Environment Setup section above).
 
 When those env vars are present:
 

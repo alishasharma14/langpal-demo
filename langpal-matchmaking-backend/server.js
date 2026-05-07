@@ -7,8 +7,12 @@ require("dotenv").config()  // Loads environment variables from .env
 const supabase = require("./supabaseClient");
 const useSupabase = process.env.SUPABASE_URL && process.env.SUPABASE_KEY;
 
+const ALLOWED_ORIGINS = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+    : [];
+
 const app = express();
-app.use(cors());
+app.use(cors({ origin: ALLOWED_ORIGINS }));
 const server = http.createServer(app);
 
 const waitingQueue = [];
@@ -58,7 +62,7 @@ function findActiveMatch(userId) {
 // creates SOCKET.IO server and attaches to HTTP server
 const io = new Server(server, {
     cors: {
-        origin: "*",
+        origin: ALLOWED_ORIGINS,
         methods: ["GET", "POST"]
     }
 });

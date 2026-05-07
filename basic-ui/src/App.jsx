@@ -9,8 +9,8 @@ const LANGUAGES = [
   'Italian', 'Japanese', 'Korean', 'Mandarin', 'Portuguese', 'Spanish'
 ];
 
-const MATCHMAKING_URL = 'http://localhost:3000';
-const SIGNALING_WS_URL = 'ws://localhost:8080';
+const MATCHMAKING_URL = import.meta.env.VITE_MATCHMAKING_URL;
+const SIGNALING_WS_URL = import.meta.env.VITE_SIGNALING_WS_URL;
 
 function getOrCreateUserId() {
   const storedUserId = window.sessionStorage.getItem('langpalUserId');
