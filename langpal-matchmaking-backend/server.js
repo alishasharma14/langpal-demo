@@ -1,7 +1,8 @@
-const express = require("express"); // for web server
+const express = require("express"); // For web server
 const http = require("http");   // HTTP server
 const cors = require("cors");   // Allows rquests from other origins
-const { Server } = require("socket.io");    //Socket.IO for real - time communication
+const { Server } = require("socket.io");    // Socket.IO for real - time communication
+const authRoutes = require("./routes/auth");    // Import authentication routes
 require("dotenv").config()  // Loads environment variables from .env
 
 const supabase = require("./supabaseClient");
