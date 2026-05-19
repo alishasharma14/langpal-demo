@@ -5,9 +5,21 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const authenticateUser = require("../middleware/authMiddleware");
 
+function ensureAuthConfigured(res) {
+    if (supabase && process.env.JWT_SECRET) {
+        return true;
+    }
+
+    res.status(503).json({
+        error: "Auth is not configured. Set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and JWT_SECRET."
+    });
+    return false;
+}
+
 // POST /auth/register
 router.post("/register", async (req, res) => {
     try {
+        if (!ensureAuthConfigured(res)) return;
 
         // get email and password from request body
         const { email, password } = req.body;
@@ -101,6 +113,7 @@ router.post("/register", async (req, res) => {
 // POST /auth/login
 router.post("/login", async (req, res) => {
     try {
+        if (!ensureAuthConfigured(res)) return;
         
         // get email and password from request body
         const { email, password } = req.body;
@@ -185,9 +198,11 @@ router.post("/login", async (req, res) => {
 });
 
 // GET /auth/me
-router.get("/me", authenticateUser, async (req, res) => {
+router.get("/me", (req, res, next) => {
+    if (!ensureAuthConfigured(res)) return;
+    next();
+}, authenticateUser, async (req, res) => {
     try {
-
         // find current authenticated user
         const { data: currentUser, error: userError } = await supabase
             .from("users")

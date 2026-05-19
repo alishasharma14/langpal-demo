@@ -1,12 +1,13 @@
+require("dotenv").config();  // Loads environment variables from .env
+
 const express = require("express"); // For web server
 const http = require("http");   // HTTP server
 const cors = require("cors");   // Allows rquests from other origins
 const { Server } = require("socket.io");    // Socket.IO for real - time communication
 const authRoutes = require("./routes/auth");    // Import authentication routes
-require("dotenv").config()  // Loads environment variables from .env
 
 const supabase = require("./supabaseClient");
-const useSupabase = process.env.SUPABASE_URL && process.env.SUPABASE_KEY;
+const useSupabase = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const ALLOWED_ORIGINS = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
@@ -14,6 +15,8 @@ const ALLOWED_ORIGINS = process.env.CORS_ORIGIN
 
 const app = express();
 app.use(cors({ origin: ALLOWED_ORIGINS }));
+app.use(express.json());
+app.use("/auth", authRoutes);
 const server = http.createServer(app);
 
 const waitingQueue = [];

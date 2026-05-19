@@ -38,6 +38,7 @@ cp langpal-webrtc/.env.example langpal-webrtc/.env
 
 ```env
 VITE_MATCHMAKING_URL=http://localhost:3000
+VITE_API_URL=http://localhost:3000
 VITE_SIGNALING_WS_URL=ws://localhost:8080
 ```
 
@@ -47,9 +48,10 @@ VITE_SIGNALING_WS_URL=ws://localhost:8080
 PORT=3000
 CORS_ORIGIN=http://localhost:5173
 
-# Optional — omit to use in-memory mode
+# Required for auth and Supabase-backed matchmaking
 SUPABASE_URL=your_supabase_url_here
-SUPABASE_KEY=your_supabase_anon_key_here
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
+JWT_SECRET=your_long_random_jwt_secret_here
 ```
 
 `CORS_ORIGIN` accepts a comma-separated list if you need to allow multiple origins (e.g. `http://localhost:5173,https://your-app.example.com`).
@@ -93,22 +95,24 @@ cd langpal-matchmaking-backend
 npm start
 ```
 
-The backend supports two modes:
+The backend supports Supabase-backed auth and matchmaking:
 
-- If `SUPABASE_URL` and `SUPABASE_KEY` are present, it uses the original Supabase flow.
-- If credentials are missing, it falls back to in-memory matchmaking so the demo still runs locally.
+- If `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `JWT_SECRET` are present, registration, login, and Supabase matchmaking work.
+- If Supabase credentials are missing, the server can still start, but the register/login UI will not work.
 
 ### Supabase Backend Mode
 
-The original backend was built to use Supabase for:
+The backend uses Supabase for:
 
+- `users`
 - `waiting_queue`
 - `matches`
 
-If you want to run the original database-backed version, add your Supabase credentials to `langpal-matchmaking-backend/.env` (see the Environment Setup section above).
+To run the register UI and database-backed matchmaking, add your Supabase credentials to `langpal-matchmaking-backend/.env` (see the Environment Setup section above).
 
 When those env vars are present:
 
+- users can register and log in
 - the backend uses the original Supabase queries and updates
 - queue entries are stored in `waiting_queue`
 - match records are stored in `matches`
@@ -117,10 +121,10 @@ When those env vars are present:
 When those env vars are missing:
 
 - the server still starts
-- Supabase calls are skipped safely
-- matchmaking uses an in-memory fallback for local demo/testing only
+- auth routes return a configuration error
+- direct socket matchmaking can fall back to in-memory mode for local backend-only testing
 
-That fallback is only for demo convenience. It is not meant to replace the original backend design.
+That fallback is only for backend testing convenience. It is not enough for the current register-first UI.
 
 ### Terminal 3: WebRTC
 

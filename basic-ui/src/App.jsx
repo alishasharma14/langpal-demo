@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import './styles.css';
+import AuthPage from './AuthPage.jsx';
 import { SignalingClient } from './signalingClient.js';
 import { WebRTCClient } from './webrtc.js';
 
@@ -11,16 +12,8 @@ const LANGUAGES = [
 
 const MATCHMAKING_URL = import.meta.env.VITE_MATCHMAKING_URL;
 const SIGNALING_WS_URL = import.meta.env.VITE_SIGNALING_WS_URL;
-
-function getOrCreateUserId() {
-  const storedUserId = window.sessionStorage.getItem('langpalUserId');
-  if (storedUserId) return storedUserId;
-
-  const generatedUserId =
-    window.crypto?.randomUUID?.() ?? `user-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  window.sessionStorage.setItem('langpalUserId', generatedUserId);
-  return generatedUserId;
-}
+const AUTH_TOKEN_KEY = 'langpalAuthToken';
+const AUTH_USER_KEY = 'langpalAuthUser';
 
 function getBootstrapState() {
   const params = new URLSearchParams(window.location.search);
@@ -31,10 +24,10 @@ function getBootstrapState() {
   };
 }
 
-function App() {
-  const bootstrapState = useRef(getBootstrapState());
-  const [nativeLanguage, setNativeLanguage] = useState(bootstrapState.current.nativeLanguage);
-  const [practiceLanguage, setPracticeLanguage] = useState(bootstrapState.current.practiceLanguage);
+function MainApp({ user, onLogout }) {
+  const bootstrapState = useMemo(() => getBootstrapState(), []);
+  const [nativeLanguage, setNativeLanguage] = useState(bootstrapState.nativeLanguage);
+  const [practiceLanguage, setPracticeLanguage] = useState(bootstrapState.practiceLanguage);
   const [isChatActive, setIsChatActive] = useState(false);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
@@ -44,11 +37,12 @@ function App() {
 
   const messagesEndRef = useRef(null);
   const socketRef = useRef(null);
-  const userIdRef = useRef(getOrCreateUserId());
+  const userIdRef = useRef(user?.id);
   const languagesRef = useRef({
-    nativeLanguage: bootstrapState.current.nativeLanguage,
-    practiceLanguage: bootstrapState.current.practiceLanguage,
+    nativeLanguage: bootstrapState.nativeLanguage,
+    practiceLanguage: bootstrapState.practiceLanguage,
   });
+  const shouldRequeueRef = useRef(bootstrapState.requeue);
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -57,13 +51,17 @@ function App() {
   const hasPlacedCallRef = useRef(false);
   const peerReadyPendingRef = useRef(false);
 
-  const isStartDisabled = !nativeLanguage || !practiceLanguage;
+  const isStartDisabled = !nativeLanguage || !practiceLanguage || !user?.id;
+
+  useEffect(() => {
+    userIdRef.current = user?.id;
+  }, [user?.id]);
 
   useEffect(() => {
     languagesRef.current = { nativeLanguage, practiceLanguage };
   }, [nativeLanguage, practiceLanguage]);
 
-  const leaveCall = () => {
+  const leaveCall = useCallback(() => {
     webrtcClientRef.current?.hangup();
     signalingRef.current?.disconnect();
     webrtcClientRef.current = null;
@@ -73,9 +71,9 @@ function App() {
     hasPlacedCallRef.current = false;
     peerReadyPendingRef.current = false;
     setCallStatus('idle');
-  };
+  }, []);
 
-  const placeCall = async () => {
+  const placeCall = useCallback(async () => {
     const webrtc = webrtcClientRef.current;
     if (!webrtc || hasPlacedCallRef.current || !webrtc.localStream) {
       peerReadyPendingRef.current = true;
@@ -85,9 +83,9 @@ function App() {
     peerReadyPendingRef.current = false;
     setStatusMessage('Connecting to partner...');
     await webrtc.call();
-  };
+  }, []);
 
-  const joinRoom = async (roomId) => {
+  const joinRoom = useCallback(async (roomId) => {
     const signaling = new SignalingClient(SIGNALING_WS_URL);
     const webrtc = new WebRTCClient(signaling);
     signalingRef.current = signaling;
@@ -149,10 +147,10 @@ function App() {
       console.error('Failed to get media devices:', err);
       setStatusMessage('Camera/mic access failed.');
     }
-  };
+  }, [placeCall]);
 
   const handleStartChat = () => {
-    if (isStartDisabled || !socketRef.current) return;
+    if (isStartDisabled || !socketRef.current || !userIdRef.current) return;
 
     console.log('[FRONTEND] Start clicked', {
       userId: userIdRef.current,
@@ -171,7 +169,7 @@ function App() {
   };
 
   const handleNext = () => {
-    if (!socketRef.current) return;
+    if (!socketRef.current || !userIdRef.current) return;
     leaveCall();
 
     console.log('[FRONTEND] Emitting next_partner', {
@@ -223,7 +221,8 @@ function App() {
       if (
         languagesRef.current.nativeLanguage &&
         languagesRef.current.practiceLanguage &&
-        bootstrapState.current.requeue
+        userIdRef.current &&
+        shouldRequeueRef.current
       ) {
         setIsChatActive(true);
         setStatusMessage('Rejoining matchmaking queue...');
@@ -239,7 +238,7 @@ function App() {
         const url = new URL(window.location.href);
         url.searchParams.delete('requeue');
         window.history.replaceState({}, '', url);
-        bootstrapState.current.requeue = false;
+        shouldRequeueRef.current = false;
       }
     });
 
@@ -269,7 +268,7 @@ function App() {
       socketRef.current = null;
       leaveCall();
     };
-  }, []);
+  }, [joinRoom, leaveCall]);
 
   const showLocalVideo = callStatus === 'connecting' || callStatus === 'connected' || callStatus === 'partner-left';
   const showRemoteVideo = callStatus === 'connected';
@@ -278,6 +277,10 @@ function App() {
     <div className="app-container">
       <div className="left-panel">
         <div className="top-bar">
+          <div className="auth-status">
+            <span>{user?.email}</span>
+            <button type="button" onClick={onLogout}>Log out</button>
+          </div>
           <div className="language-selector">
             <label htmlFor="native-select">Your Native Language</label>
             <select
@@ -386,6 +389,47 @@ function App() {
       </div>
     </div>
   );
+}
+
+function getStoredAuth() {
+  const token = window.localStorage.getItem(AUTH_TOKEN_KEY);
+  const storedUser = window.localStorage.getItem(AUTH_USER_KEY);
+
+  if (!token || !storedUser) return { token: '', user: null };
+
+  try {
+    const user = JSON.parse(storedUser);
+    if (!user?.id) return { token: '', user: null };
+
+    return {
+      token,
+      user,
+    };
+  } catch {
+    return { token, user: null };
+  }
+}
+
+function App() {
+  const [auth, setAuth] = useState(() => getStoredAuth());
+
+  const handleAuthenticated = ({ token, user }) => {
+    window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+    window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+    setAuth({ token, user });
+  };
+
+  const handleLogout = () => {
+    window.localStorage.removeItem(AUTH_TOKEN_KEY);
+    window.localStorage.removeItem(AUTH_USER_KEY);
+    setAuth({ token: '', user: null });
+  };
+
+  if (!auth.token) {
+    return <AuthPage onAuthenticated={handleAuthenticated} />;
+  }
+
+  return <MainApp user={auth.user} onLogout={handleLogout} />;
 }
 
 export default App;
