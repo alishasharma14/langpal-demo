@@ -4,9 +4,9 @@ This folder contains 3 separate repos that work together for the demo:
 
 - `basic-ui`: React frontend on `http://localhost:5173`
 - `langpal-matchmaking-backend`: Socket.IO matchmaking backend on `http://localhost:3000`
-- `langpal-webrtc`: WebRTC video UI and signaling server on `http://localhost:8080`
+- `langpal-webrtc`: WebRTC signaling server on `ws://localhost:8080`
 
-The repos stay separate. The frontend sends users into matchmaking, the backend pairs them, and matched users are opened in a new WebRTC tab with the same room ID.
+The repos stay separate. The frontend sends users into matchmaking, the backend pairs them, and matched users join the same embedded WebRTC room.
 
 ## Repositories
 
@@ -22,7 +22,7 @@ The demo uses these ports consistently:
 
 - Frontend: `5173`
 - Matchmaking backend: `3000`
-- WebRTC app: `8080`
+- WebRTC signaling server: `8080`
 
 ## Environment Setup
 
@@ -136,11 +136,11 @@ npm start
 ## Demo Flow
 
 1. Open `http://localhost:5173` in 2 browser tabs.
-2. Choose languages in both tabs.
-3. Click `Start` in both tabs.
-4. Watch the backend terminal for queue and match logs.
-5. Each frontend tab opens the WebRTC app in a new tab.
-6. Confirm both WebRTC tabs show the same room ID.
+2. Register or sign in as a different user in each tab.
+3. Choose languages in both tabs.
+4. Click `Start` in both tabs.
+5. Watch the backend terminal for queue and match logs.
+6. Confirm each frontend tab shows local video and then the partner video.
 7. Confirm camera and microphone permissions are allowed.
 
 This demo intentionally keeps the repos separate and avoids rewriting the original systems.
@@ -151,8 +151,8 @@ Key demo changes:
 
 - connected the existing `Start` button to the matchmaking backend using Socket.IO
 - listens for `match_found`
-- opens the WebRTC app in a new tab with the matched `roomId`
-- adds console logs to make the test flow easier to follow
+- joins the matched WebRTC room inside the frontend
+- shows register/login before matchmaking so Supabase user IDs are used in the queue
 
 ### Backend (`langpal-matchmaking-backend`)
 
@@ -167,10 +167,9 @@ Key demo changes:
 
 Key demo changes:
 
-- reads the `roomId` from the URL automatically
-- joins the room on page load
-- simplifies the UI for demo use
-- shows the current room ID and connection state on screen
+- runs the signaling server used by the embedded frontend call
+- relays WebRTC offer, answer, and ICE messages between peers in a room
+- reads `PORT` from `langpal-webrtc/.env`
 
 ## Demo Scope
 
@@ -178,13 +177,11 @@ This is a working demo integration, not a full product-level UI integration.
 
 For the demo:
 
-- the frontend and WebRTC app are connected enough to test matchmaking and room handoff
-- WebRTC opens in a separate tab instead of being fully embedded into the React UI
-- the WebRTC page is simplified to reduce confusion while testing
+- the frontend and WebRTC signaling server are connected enough to test matchmaking and room handoff
+- WebRTC is embedded in the React UI using the signaling server
 
 Not fully integrated yet:
 
-- a single unified in-app calling experience inside `basic-ui`
 - polished call controls shared across matchmaking and video UI
 - a production-ready end-to-end UX
 
@@ -192,12 +189,12 @@ Not fully integrated yet:
 
 ### Frontend console
 
-The frontend prints a test checklist on load and logs:
+The frontend logs:
 
 - when `Start` is clicked
 - when `next_partner` is emitted
 - when `match_found` is received
-- when the WebRTC redirect happens
+- when it joins a matched room
 
 ### Backend logs
 
@@ -221,6 +218,4 @@ Example log lines:
 
 ## Notes
 
-- The frontend opens WebRTC in a new tab for easier side-by-side testing.
-- The WebRTC UI has been simplified for the demo and shows the current room ID and connection state.
 - Matchmaking behavior was not rewritten; the setup was only cleaned up for easier local testing.
