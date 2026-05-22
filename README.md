@@ -4,7 +4,7 @@ This folder contains 3 separate repos that work together for the demo:
 
 - `basic-ui`: React frontend on `http://localhost:5173`
 - `langpal-matchmaking-backend`: Socket.IO matchmaking backend on `http://localhost:3000`
-- `langpal-webrtc`: WebRTC signaling server on `ws://localhost:8080`
+- `signaling-server`: WebRTC signaling server on `ws://localhost:8080`
 
 The repos stay separate. The frontend sends users into matchmaking, the backend pairs them, and matched users join the same embedded WebRTC room.
 
@@ -12,7 +12,6 @@ The repos stay separate. The frontend sends users into matchmaking, the backend 
 
 - Frontend: https://github.com/Manaskumm/basic-ui
 - Backend: https://github.com/kashish-1703/langpal-matchmaking-backend
-- WebRTC: https://github.com/PaytonAnderson/langpal-webrtc
 
 These repos were originally authored separately. This demo setup keeps that structure intact and only adds minimal connection work between them.
 
@@ -31,7 +30,7 @@ Each repo requires a `.env` file. Copy the example and fill in the values:
 ```bash
 cp basic-ui/.env.example basic-ui/.env
 cp langpal-matchmaking-backend/.env.example langpal-matchmaking-backend/.env
-cp langpal-webrtc/.env.example langpal-webrtc/.env
+cp signaling-server/.env.example signaling-server/.env
 ```
 
 ### `basic-ui/.env`
@@ -56,7 +55,7 @@ JWT_SECRET=your_long_random_jwt_secret_here
 
 `CORS_ORIGIN` accepts a comma-separated list if you need to allow multiple origins (e.g. `http://localhost:5173,https://your-app.example.com`).
 
-### `langpal-webrtc/.env`
+### `signaling-server/.env`
 
 ```env
 PORT=8080
@@ -73,7 +72,7 @@ npm install
 cd ../langpal-matchmaking-backend
 npm install
 
-cd ../langpal-webrtc
+cd ../signaling-server
 npm install
 ```
 
@@ -126,10 +125,10 @@ When those env vars are missing:
 
 That fallback is only for backend testing convenience. It is not enough for the current register-first UI.
 
-### Terminal 3: WebRTC
+### Terminal 3: Signaling Server
 
 ```bash
-cd langpal-webrtc
+cd signaling-server
 npm start
 ```
 
@@ -163,13 +162,13 @@ Key demo changes:
 - added clearer queue, match, next, and disconnect logs for testing visibility
 - kept the same socket event names and overall behavior
 
-### WebRTC (`langpal-webrtc`)
+### Signaling Server (`signaling-server`)
 
 Key demo changes:
 
-- runs the signaling server used by the embedded frontend call
+- runs the WebRTC signaling server used by the embedded frontend call
 - relays WebRTC offer, answer, and ICE messages between peers in a room
-- reads `PORT` from `langpal-webrtc/.env`
+- reads `PORT` from `signaling-server/.env`
 
 ## Demo Scope
 

@@ -9,7 +9,9 @@ export class WebRTCClient {
     this.signaling = signalingClient;
     this.pc = null;
     this.localStream = null;
+    this.dataChannel = null;
     this.onRemoteStream = null;
+    this.onMessage = null;
 
     this.signaling.on('offer', (msg) => this._handleOffer(msg));
     this.signaling.on('answer', (msg) => this._handleAnswer(msg));
@@ -26,6 +28,11 @@ export class WebRTCClient {
 
   async call() {
     this._createPeerConnection();
+
+    this.dataChannel = this.pc.createDataChannel('chat');
+    this.dataChannel.onmessage = (e) => {
+      if (this.onMessage) this.onMessage(JSON.parse(e.data).text);
+    };
 
     this.localStream.getTracks().forEach((track) =>
       this.pc.addTrack(track, this.localStream)
@@ -88,9 +95,24 @@ export class WebRTCClient {
     this.pc.ontrack = ({ streams }) => {
       if (this.onRemoteStream) this.onRemoteStream(streams[0]);
     };
+
+    this.pc.ondatachannel = ({ channel }) => {
+      this.dataChannel = channel;
+      this.dataChannel.onmessage = (e) => {
+        if (this.onMessage) this.onMessage(JSON.parse(e.data).text);
+      };
+    };
+  }
+
+  sendMessage(text) {
+    if (this.dataChannel?.readyState === 'open') {
+      this.dataChannel.send(JSON.stringify({ text }));
+    }
   }
 
   hangup() {
+    this.dataChannel?.close();
+    this.dataChannel = null;
     this.pc?.close();
     this.pc = null;
     this.localStream?.getTracks().forEach((t) => t.stop());

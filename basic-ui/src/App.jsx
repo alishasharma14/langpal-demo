@@ -117,9 +117,12 @@ function MainApp({ user, onLogout }) {
     });
 
     signaling.on('peer-left', () => {
+      webrtcClientRef.current?.hangup();
+      if (localVideoRef.current) localVideoRef.current.srcObject = null;
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
       hasPlacedCallRef.current = false;
       peerReadyPendingRef.current = false;
+      webrtcClientRef.current = null;
       setCallStatus('partner-left');
       setStatusMessage('Partner left the room.');
     });
@@ -270,7 +273,7 @@ function MainApp({ user, onLogout }) {
     };
   }, [joinRoom, leaveCall]);
 
-  const showLocalVideo = callStatus === 'connecting' || callStatus === 'connected' || callStatus === 'partner-left';
+  const showLocalVideo = callStatus === 'connecting' || callStatus === 'connected';
   const showRemoteVideo = callStatus === 'connected';
 
   return (
