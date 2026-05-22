@@ -81,9 +81,16 @@ io.on("connection", (socket) => {
     console.log("User connection:", socket.id);
 
     // HANDLE MATCHMAKING LOGIC
-    socket.on("start_matchmaking", async ({ userId }) => {
+    socket.on("start_matchmaking", async ({ userId, nativeLanguage, practiceLanguage }) => {
         try {
             socket.userId = userId; // to track which user disconnected
+            socket.nativeLanguage = nativeLanguage;
+            socket.practiceLanguage = practiceLanguage;
+
+            if (!nativeLanguage || !practiceLanguage) {
+                socket.emit("info", { message: "Native and practice languages are required." });
+                return;
+            }
 
             console.log(`Start matchmaking requested by ${userId}`);
 
@@ -112,7 +119,9 @@ io.on("connection", (socket) => {
                     .insert([
                         {
                             user_id: userId,
-                            socket_id: socket.id
+                            socket_id: socket.id,
+                            native_language: nativeLanguage,
+                            practice_language: practiceLanguage
                         }
                     ]);
                 
@@ -137,6 +146,8 @@ io.on("connection", (socket) => {
                     .from("waiting_queue")
                     .select("*")
                     .neq("user_id", userId)
+                    .eq("native_language", practiceLanguage)
+                    .eq("practice_language", nativeLanguage)
                     .order("created_at", { ascending: true })
                     .limit(1);
                 
@@ -193,7 +204,20 @@ io.on("connection", (socket) => {
                     logMatch(userId, partner.user_id, matchData[0].id);
                 } else {
 
-                    socket.emit("queued", { message: "Waiting for a partner..."});  // executes if no partner exists to be matched in the queue
+                    const { count: waitingCount, error: waitingCountError } = await supabase
+                        .from("waiting_queue")
+                        .select("*", { count: "exact", head: true })
+                        .eq("native_language", nativeLanguage)
+                        .eq("practice_language", practiceLanguage);
+                    
+                    if (waitingCountError) {
+                        console.error("Waiting count error:", waitingCountError);
+                    }
+
+                    socket.emit("queued", {
+                        message: "Waiting for a compatible partner...",
+                        waitingCount: waitingCount ?? 0
+                    });
 
                 }
             } else {
@@ -256,7 +280,7 @@ io.on("connection", (socket) => {
     });
     
     // HANDLE NEXT PARTNER TO BE MATCHED LOGIC
-    socket.on("next_partner", async ({ userId }) => {
+    socket.on("next_partner", async ({ userId, nativeLanguage, practiceLanguage }) => {
         try {
             logNext(userId);
             
@@ -279,7 +303,7 @@ io.on("connection", (socket) => {
                     
                     await supabase
                         .from("matches")
-                        .update({ status: "ended" })
+                        .delete()
                         .eq("id", activeMatches[0].id);
                 }
 
@@ -295,7 +319,9 @@ io.on("connection", (socket) => {
                     .insert([
                         {
                             user_id: userId,
-                            socket_id: socket.id
+                            socket_id: socket.id,
+                            native_language: nativeLanguage,
+                            practice_language: practiceLanguage
                         }
                     ]);
                 
@@ -332,7 +358,11 @@ io.on("connection", (socket) => {
             }
             
             // emit queued back to the client
-            socket.emit("queued", { message: "Re-entered queue"});
+            socket.emit("queued", {
+                message: "Re-entered queue",
+                nativeLanguage,
+                practiceLanguage
+            });
 
         } catch(error) {
 
@@ -371,11 +401,30 @@ io.on("connection", (socket) => {
 
                     const match = activeMatches[0];
 
+                    const partnerId = match.user1_id === userId ? match.user2_id : match.user1_id;
+
+                    const { data: disconnectedUserProfile } = await supabase
+                        .from("user_profiles")
+                        .select("name")
+                        .eq("id", userId)
+                        .maybeSingle();
+                    
+                    const disconnectedUserName = disconnectedUserProfile?.name || "Your partner";
+                    const startedAt = new Date(match.started_at).getTime();
+                    const durationSeconds = Math.floor((Date.now() - startedAt) / 1000);
+
+                    io.emit("partner_disconnected", {
+                        partnerId: userId,
+                        disconnectedUserId: userId,
+                        partnerName: disconnectedUserName,
+                        matchId: match.id,
+                        durationSeconds: durationSeconds
+                    });
+
                     await supabase
                         .from("matches")
-                        .update({ status: "ended" })
+                        .delete()
                         .eq("id", match.id);
-
                 }
             } else {
                 removeQueuedUser(userId);
