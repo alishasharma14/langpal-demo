@@ -19,6 +19,7 @@ body {
     height: 100vh;
     padding: 20px;
     gap: 20px;
+    min-width: 0;
 }
 
 /* Mobile responsive trick */
@@ -48,6 +49,7 @@ body {
     flex-direction: column;
     gap: 20px;
     height: 100%;
+    min-width: 0;
 }
 
 .right-panel {
@@ -66,9 +68,7 @@ body {
 
 .top-bar {
     display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: flex-end;
+    flex-direction: column;
     gap: 20px;
     background-color: rgba(255, 255, 255, 0.95);
     padding: 20px 30px;
@@ -78,11 +78,33 @@ body {
     flex-shrink: 0;
 }
 
+.top-bar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.app-title {
+    margin: 0;
+    font-size: 24px;
+    color: #FF6B4A;
+    font-weight: 700;
+}
+
+.top-bar-controls {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 20px;
+    width: 100%;
+}
+
 .auth-status {
     display: flex;
     align-items: center;
     gap: 10px;
-    min-width: 100%;
     justify-content: flex-end;
     color: #6b7280;
     font-size: 14px;
@@ -252,16 +274,73 @@ body {
 .video-card video {
     width: 100%;
     height: 100%;
-    object-fit: contain;
+    object-fit: cover;
     display: block;
     border-radius: 24px;
+}
+
+.post-call-card {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    align-items: center;
+    color: #4B5563;
+}
+.post-call-card h3 {
+    margin: 0;
+    color: #FF6B4A;
+}
+.post-call-card p {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 500;
+}
+.post-call-card .next-match-btn {
+    padding: 10px 24px;
+    background-color: #E63946;
+    color: white;
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    font-family: inherit;
+    box-shadow: 0 4px 10px rgba(230, 57, 70, 0.3);
+    transition: transform 0.2s;
+}
+.post-call-card .next-match-btn:hover {
+    transform: translateY(-2px);
+}
+.post-call-card .stop-btn {
+    padding: 6px 16px;
+    background-color: transparent;
+    color: #9ca3af;
+    border: 1px solid #d1d5db;
+    border-radius: 50px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: inherit;
+    transition: all 0.2s;
+}
+.post-call-card .stop-btn:hover {
+    color: #4B5563;
+    border-color: #9ca3af;
+}
+
+.queue-counter {
+    padding: 0 20px;
+    font-size: 18px;
+    line-height: 1.4;
+    color: #FF6B4A;
 }
 
 /* Chat Panel */
 .chat-header {
     padding: 20px 25px;
-    background: linear-gradient(135deg, #FF9A56, #FF6B4A);
-    color: white;
+    background: #FFF4EC;
+    color: #FF6B4A;
+    border-bottom: 2px solid #FFE4D6;
     display: flex;
     align-items: center;
     font-weight: 600;
@@ -324,6 +403,7 @@ body {
 
 .chat-input-area input {
     flex: 1;
+    min-width: 0;
     padding: 14px 20px;
     border: 2px solid #eee;
     border-radius: 50px;
@@ -510,7 +590,301 @@ body {
     display: flex;
     justify-content: center;
     gap: 8px;
+    border: 2px solid #eee;
+    border-radius: 50px;
+    outline: none;
+    font-family: inherit;
+    font-size: 15px;
+    transition: all 0.3s ease;
+}
+
+.chat-input-area input:disabled {
+    background-color: #f9fafb;
+    cursor: not-allowed;
+}
+
+.chat-input-area input:not(:disabled):focus {
+    border-color: #FF6B4A;
+    box-shadow: 0 0 0 3px rgba(255, 107, 74, 0.1);
+}
+
+.send-btn {
+    padding: 0 25px;
+    background-color: #FF6B4A;
+    color: white;
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    font-weight: 600;
+    font-family: inherit;
+    font-size: 15px;
+    box-shadow: 0 4px 12px rgba(255, 107, 74, 0.3);
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.send-btn:disabled {
+    background-color: transparent;
+    box-shadow: none;
+    cursor: not-allowed;
+    color: transparent;
+}
+
+.send-btn:not(:disabled):hover {
+    background-color: #E63946;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(230, 57, 70, 0.4);
+}
+
+.auth-page {
+    min-height: 100vh;
+    height: 100vh;
+    overflow-y: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 20px;
+    background: linear-gradient(135deg, #FFD93D 0%, #FF9A56 50%, #FF6B4A 100%);
+}
+
+.auth-card {
+    width: min(100%, 460px);
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    border-radius: 24px;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.12);
+    padding: 38px 36px 32px;
+    backdrop-filter: blur(18px);
+}
+
+.auth-header {
+    text-align: center;
+    margin-bottom: 28px;
+}
+
+.auth-header h1 {
+    margin: 0 0 8px;
+    color: #E63946;
+    font-size: 30px;
+    line-height: 1.1;
+}
+
+.auth-header p {
+    margin: 0;
+    color: #6b7280;
+    font-weight: 600;
+}
+
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.auth-footer {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
     margin: 24px 0 0;
+    color: #6b7280;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.auth-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.auth-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.auth-field label {
+    color: #4b5563;
+    font-size: 14px;
+    font-weight: 700;
+    padding-left: 4px;
+}
+
+.auth-field input,
+.auth-field select {
+    width: 100%;
+    border: 1.5px solid #e1e7f0;
+    border-radius: 14px;
+    background: #f7f9fc;
+    color: #374151;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 500;
+    outline: none;
+    padding: 13px 16px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.auth-field input::placeholder {
+    color: #9ca3af;
+    font-weight: 400;
+}
+
+.auth-field input:focus,
+.auth-field select:focus {
+    border-color: #E63946;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(230, 57, 70, 0.12);
+}
+
+.auth-password-row {
+    position: relative;
+}
+
+.auth-password-row input {
+    padding-right: 48px;
+}
+
+.auth-visibility-btn {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    border: none;
+    background: transparent;
+    color: #9ca3af;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 18px;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s ease;
+}
+
+.auth-visibility-btn:hover {
+    color: #6b7280;
+}
+
+.auth-checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #6b7280;
+    margin: 4px 0;
+    cursor: pointer;
+    user-select: none;
+}
+
+.auth-checkbox-row input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    accent-color: #E63946;
+    cursor: pointer;
+}
+
+.auth-tip {
+    font-size: 13px;
+    font-weight: 600;
+    color: #ff7a33;
+    text-align: center;
+    margin: -4px 0 4px;
+}
+
+.auth-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 13px;
+    font-weight: 700;
+    margin: 10px 0;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1.5px solid #f1f3f7;
+}
+
+.auth-divider:not(:empty)::before {
+    margin-right: 1em;
+}
+
+.auth-divider:not(:empty)::after {
+    margin-left: 1em;
+}
+
+.social-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: #ffffff;
+    border: 1.5px solid #e1e7f0;
+    border-radius: 14px;
+    color: #374151;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 13px;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.social-btn:hover {
+    background: #f9fafb;
+    border-color: #d1d5db;
+}
+
+.social-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.auth-error {
+    border-radius: 14px;
+    background: #fff1f2;
+    color: #be123c;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 12px 14px;
+}
+
+.auth-submit-btn {
+    border: none;
+    border-radius: 14px;
+    background: #E63946;
+    color: #fff;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 14px;
+    box-shadow: 0 6px 15px rgba(230, 57, 70, 0.28);
+    transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.auth-submit-btn:disabled {
+    background: #fca5a5;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.auth-submit-btn:not(:disabled):hover {
+    background: #D62A38;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(230, 57, 70, 0.38);
+}
+
+.auth-footer {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin: 20px 0 0;
     color: #6b7280;
     font-size: 15px;
     font-weight: 600;
@@ -532,11 +906,103 @@ body {
 }
 
 @media (max-width: 560px) {
-    .auth-card {
-        padding: 30px 22px 26px;
-    }
 
     .auth-header h1 {
         font-size: 25px;
+    }
+}
+
+@media (max-width: 900px) {
+    body {
+        min-height: 100vh;
+        overflow: auto;
+    }
+
+    .app-container {
+        min-height: 100vh;
+        height: auto;
+        flex-direction: column;
+        overflow: visible;
+        padding: 14px;
+        gap: 14px;
+    }
+
+    .left-panel,
+    .right-panel {
+        width: 100%;
+        max-width: none;
+        min-width: 0;
+        height: auto;
+    }
+
+    .left-panel {
+        min-height: 0;
+    }
+
+    .top-bar,
+    .right-panel,
+    .video-card {
+        border-radius: 20px;
+    }
+
+    .top-bar {
+        padding: 16px;
+        gap: 14px;
+    }
+
+    .top-bar-header {
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .auth-status {
+        min-width: 0;
+    }
+
+    .auth-status span {
+        max-width: 42vw;
+    }
+
+    .video-grid {
+        min-height: 520px;
+    }
+
+    .right-panel {
+        min-height: 420px;
+    }
+}
+
+@media (max-width: 520px) {
+    .top-bar-header,
+    .top-bar-controls,
+    .action-buttons,
+    .chat-input-area {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .auth-status {
+        justify-content: space-between;
+    }
+
+    .auth-status span {
+        max-width: 62vw;
+    }
+
+    .video-grid {
+        min-height: 440px;
+    }
+
+    .video-card {
+        padding: 16px;
+        font-size: 17px;
+    }
+
+    .video-card video {
+        border-radius: 20px;
+    }
+
+    .send-btn {
+        min-height: 46px;
     }
 }

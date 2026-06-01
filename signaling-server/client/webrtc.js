@@ -1,6 +1,8 @@
 const ICE_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
+    // Add TURN here when needed:
+    // { urls: 'turn:your-turn-server.com', username: '...', credential: '...' }
   ],
 };
 
@@ -9,35 +11,28 @@ export class WebRTCClient {
     this.signaling = signalingClient;
     this.pc = null;
     this.localStream = null;
-    this.onRemoteStream = null;
-    this.onMessage = null;
-    this.dataChannel = null;
-    this._pendingOffer = null;
+    this.onRemoteStream = null; // set by caller: (MediaStream) => void
 
+    // Wire up signaling handlers
     this.signaling.on('offer', (msg) => this._handleOffer(msg));
     this.signaling.on('answer', (msg) => this._handleAnswer(msg));
     this.signaling.on('ice-candidate', (msg) => this._handleIceCandidate(msg));
   }
 
+  // Step 1 — acquire local camera/mic
   async startLocalStream() {
     this.localStream = await navigator.mediaDevices.getUserMedia({
       video: true,
       audio: true,
     });
-
-    if (this._pendingOffer) {
-      const pendingOffer = this._pendingOffer;
-      this._pendingOffer = null;
-      await this._handleOffer(pendingOffer);
-    }
-
     return this.localStream;
   }
 
+  // Step 2 — caller initiates
   async call() {
     this._createPeerConnection();
-    this._setupDataChannel(this.pc.createDataChannel('chat'));
 
+    // Must add tracks before createOffer
     this.localStream.getTracks().forEach((track) =>
       this.pc.addTrack(track, this.localStream)
     );
@@ -47,12 +42,8 @@ export class WebRTCClient {
     this.signaling.send({ type: 'offer', sdp: offer });
   }
 
+  // Called when remote peer renegotiates
   async _handleOffer({ sdp }) {
-    if (!this.localStream) {
-      this._pendingOffer = { sdp };
-      return;
-    }
-
     this._createPeerConnection();
 
     this.localStream.getTracks().forEach((track) =>
@@ -74,12 +65,10 @@ export class WebRTCClient {
 
   async _handleIceCandidate({ candidate }) {
     if (!candidate) return;
-    if (!this.pc) {
-      this._iceQueue = this._iceQueue || [];
-      this._iceQueue.push(candidate);
-    } else if (this.pc.remoteDescription) {
+    if (this.pc.remoteDescription) {
       await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
     } else {
+      // Queue until remote description is set
       this._iceQueue = this._iceQueue || [];
       this._iceQueue.push(candidate);
     }
@@ -94,7 +83,7 @@ export class WebRTCClient {
 
   _createPeerConnection() {
     if (this.pc) this.pc.close();
-    this._iceQueue = this._iceQueue || [];
+    this._iceQueue = [];
 
     this.pc = new RTCPeerConnection(ICE_CONFIG);
 
@@ -107,38 +96,12 @@ export class WebRTCClient {
     this.pc.ontrack = ({ streams }) => {
       if (this.onRemoteStream) this.onRemoteStream(streams[0]);
     };
-
-    this.pc.ondatachannel = ({ channel }) => {
-      this._setupDataChannel(channel);
-    };
-  }
-
-  _setupDataChannel(channel) {
-    this.dataChannel = channel;
-    this.dataChannel.onmessage = ({ data }) => {
-      if (this.onMessage) this.onMessage(data);
-    };
-    this.dataChannel.onclose = () => {
-      if (this.dataChannel === channel) this.dataChannel = null;
-    };
-  }
-
-  sendMessage(message) {
-    if (this.dataChannel?.readyState === 'open') {
-      this.dataChannel.send(message);
-      return true;
-    }
-    return false;
   }
 
   hangup() {
-    this.dataChannel?.close();
-    this.dataChannel = null;
     this.pc?.close();
     this.pc = null;
     this.localStream?.getTracks().forEach((t) => t.stop());
     this.localStream = null;
-    this._pendingOffer = null;
-    this._iceQueue = [];
   }
 }
