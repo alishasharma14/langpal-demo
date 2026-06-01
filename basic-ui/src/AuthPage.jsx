@@ -18,8 +18,7 @@ const LANGUAGES = [
 
 function AuthPage({ onAuthenticated }) {
   const [mode, setMode] = useState('register');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [nativeLanguage, setNativeLanguage] = useState('');
   const [practiceLanguage, setPracticeLanguage] = useState('');
@@ -42,8 +41,13 @@ function AuthPage({ onAuthenticated }) {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setErrorMessage('');
+    const trimmedDisplayName = displayName.trim();
 
     if (isRegister) {
+      if (!trimmedDisplayName) {
+        setErrorMessage('Display name is required.');
+        return;
+      }
       if (password !== confirmPassword) {
         setErrorMessage('Passwords do not match.');
         return;
@@ -70,7 +74,14 @@ function AuthPage({ onAuthenticated }) {
 
     try {
       const payload = isRegister
-        ? { email, password, firstName, lastName, nativeLanguage, practiceLanguage }
+        ? {
+            email,
+            password,
+            firstName: trimmedDisplayName,
+            lastName: '',
+            nativeLanguage,
+            practiceLanguage
+          }
         : { email, password };
 
       const response = await fetch(`${API_URL}/auth/${isRegister ? 'register' : 'login'}`, {
@@ -105,31 +116,17 @@ function AuthPage({ onAuthenticated }) {
 
         <form onSubmit={handleSubmit} className="auth-form">
           {isRegister && (
-            <div className="auth-row">
-              <div className="auth-field">
-                <label htmlFor="auth-firstname">First name</label>
-                <input
-                  id="auth-firstname"
-                  name="firstName"
-                  type="text"
-                  placeholder="John"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="auth-field">
-                <label htmlFor="auth-lastname">Last name</label>
-                <input
-                  id="auth-lastname"
-                  name="lastName"
-                  type="text"
-                  placeholder="Doe"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  required
-                />
-              </div>
+            <div className="auth-field">
+              <label htmlFor="auth-display-name">Display name</label>
+              <input
+                id="auth-display-name"
+                name="displayName"
+                type="text"
+                placeholder="How should we call you?"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                required
+              />
             </div>
           )}
 
@@ -273,7 +270,12 @@ function AuthPage({ onAuthenticated }) {
 
         <div className="auth-divider">OR</div>
 
-        <button type="button" className="social-btn" onClick={() => console.log('Google login clicked')}>
+        <button
+          type="button"
+          className="social-btn"
+          disabled
+          title="Google sign-in is not wired up in this demo yet."
+        >
           <svg viewBox="0 0 24 24" width="18" height="18">
             <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.92h6.69c-.29 1.5-.1.8-1.5 2.76l3.4 2.64c2-1.84 3.15-4.55 3.15-7.25z"/>
             <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.4-2.64c-.9.6-2.07.98-3.53.98-3.13 0-5.78-2.11-6.73-4.96L.76 17.15C2.73 21.08 6.84 24 12 24z"/>
@@ -281,13 +283,6 @@ function AuthPage({ onAuthenticated }) {
             <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 6.84 0 2.73 2.92.76 6.85l4.51 3.64c.95-2.85 3.6-4.96 6.73-4.96z"/>
           </svg>
           <span>Continue with Google</span>
-        </button>
-
-        <button type="button" className="social-btn" style={{ marginTop: '10px' }} onClick={() => console.log('Apple login clicked')}>
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-            <path d="M17.05 20.28c-.98.95-2.05 1.88-3.08 1.88-1.02 0-1.4-.61-2.58-.61-1.16 0-1.58.6-2.56.61-1.03.02-2.2-.99-3.2-1.98-2.04-2.02-3.6-5.7-3.6-9.17 0-5.5 3.59-8.43 6.98-8.43 1.07 0 2.08.62 2.74.62.65 0 1.85-.75 3.12-.75 1.33 0 2.53.48 3.32 1.35-2.73 1.6-2.29 5.39.46 6.51-1.08 2.71-2.61 5.37-3.8 6.32zM12.03 4.64c.79-1.02 1.32-2.44 1.17-3.86-1.22.05-2.7.81-3.57 1.83-.75.87-1.4 2.31-1.22 3.71 1.37.1 2.77-.66 3.62-1.68z"/>
-          </svg>
-          <span>Continue with Apple</span>
         </button>
 
         <p className="auth-footer">

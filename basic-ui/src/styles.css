@@ -840,6 +840,16 @@ body {
     border-color: #d1d5db;
 }
 
+.social-btn:disabled {
+    cursor: not-allowed;
+    opacity: .62;
+}
+
+.social-btn:disabled:hover {
+    background: #ffffff;
+    border-color: #e1e7f0;
+}
+
 .social-btn svg {
     width: 18px;
     height: 18px;
