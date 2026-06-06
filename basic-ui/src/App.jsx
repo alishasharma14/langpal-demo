@@ -38,6 +38,11 @@ const SIGNALING_WS_URL = getSignalingUrl();
 const AUTH_TOKEN_KEY = 'langpalAuthToken';
 const AUTH_USER_KEY = 'langpalAuthUser';
 
+function getUserDisplayName(user) {
+  const firstLastName = user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : '';
+  return user?.display_name || firstLastName || user?.email || 'You';
+}
+
 function getBootstrapState() {
   const params = new URLSearchParams(window.location.search);
   return {
@@ -47,7 +52,7 @@ function getBootstrapState() {
   };
 }
 
-function MainApp({ user, onLogout }) {
+function MainApp({ user, authToken, onLogout, onUserUpdate }) {
   const bootstrapState = useMemo(() => getBootstrapState(), []);
   const [nativeLanguage, setNativeLanguage] = useState(
     bootstrapState.nativeLanguage || user?.native_language || ''
@@ -64,9 +69,14 @@ function MainApp({ user, onLogout }) {
   const [queueCount, setQueueCount] = useState(0);
   const [partnerName, setPartnerName] = useState('Partner');
   const [callDuration, setCallDuration] = useState(0);
+  const [isEditingDisplayName, setIsEditingDisplayName] = useState(false);
+  const [displayNameInput, setDisplayNameInput] = useState(() => getUserDisplayName(user));
+  const [displayNameError, setDisplayNameError] = useState('');
+  const [isSavingDisplayName, setIsSavingDisplayName] = useState(false);
 
   const callStartTimeRef = useRef(null);
   const partnerNameRef = useRef('Partner');
+  const displayName = getUserDisplayName(user);
 
   const messagesEndRef = useRef(null);
   const socketRef = useRef(null);
@@ -104,6 +114,55 @@ function MainApp({ user, onLogout }) {
   useEffect(() => {
     partnerNameRef.current = partnerName;
   }, [partnerName]);
+
+  useEffect(() => {
+    if (!isEditingDisplayName) {
+      setDisplayNameInput(displayName);
+    }
+  }, [displayName, isEditingDisplayName]);
+
+  const handleDisplayNameSave = async (event) => {
+    event.preventDefault();
+    const nextDisplayName = displayNameInput.trim().replace(/\s+/g, ' ');
+
+    setDisplayNameError('');
+
+    if (!nextDisplayName) {
+      setDisplayNameError('Name is required.');
+      return;
+    }
+
+    if (nextDisplayName.length > 60) {
+      setDisplayNameError('Use 60 characters or fewer.');
+      return;
+    }
+
+    setIsSavingDisplayName(true);
+
+    try {
+      const response = await fetch(`${MATCHMAKING_URL}/auth/me/display-name`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ displayName: nextDisplayName }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Could not update display name.');
+      }
+
+      onUserUpdate(data.user);
+      setIsEditingDisplayName(false);
+    } catch (error) {
+      setDisplayNameError(error.message);
+    } finally {
+      setIsSavingDisplayName(false);
+    }
+  };
 
   const leaveCall = useCallback(() => {
     webrtcClientRef.current?.hangup();
@@ -248,7 +307,7 @@ function MainApp({ user, onLogout }) {
 
     socketRef.current.emit('start_matchmaking', {
       userId: userIdRef.current,
-      displayName: user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user?.email,
+      displayName,
       nativeLanguage,
       practiceLanguage,
     });
@@ -272,7 +331,7 @@ function MainApp({ user, onLogout }) {
 
     socketRef.current.emit('next_partner', {
       userId: userIdRef.current,
-      displayName: user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user?.email,
+      displayName,
       nativeLanguage,
       practiceLanguage,
     });
@@ -327,7 +386,7 @@ function MainApp({ user, onLogout }) {
         });
         socket.emit('start_matchmaking', {
           userId: userIdRef.current,
-          displayName: user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user?.email,
+          displayName,
           nativeLanguage: languagesRef.current.nativeLanguage,
           practiceLanguage: languagesRef.current.practiceLanguage,
         });
@@ -377,7 +436,7 @@ function MainApp({ user, onLogout }) {
       socketRef.current = null;
       leaveCall();
     };
-  }, [joinRoom, leaveCall, markPartnerLeft, user?.email, user?.first_name, user?.last_name]);
+  }, [displayName, joinRoom, leaveCall, markPartnerLeft, user?.email, user?.first_name, user?.last_name]);
 
   const showLocalVideo = callStatus === 'connecting' || callStatus === 'connected' || callStatus === 'partner-left';
   const showRemoteVideo = callStatus === 'connected';
@@ -409,7 +468,38 @@ function MainApp({ user, onLogout }) {
           <div className="top-bar-header">
             <h2 className="app-title">LangPal Live</h2>
             <div className="auth-status">
-              <span>{user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user?.email}</span>
+              {isEditingDisplayName ? (
+                <form className="display-name-form" onSubmit={handleDisplayNameSave}>
+                  <input
+                    type="text"
+                    value={displayNameInput}
+                    onChange={(event) => setDisplayNameInput(event.target.value)}
+                    maxLength={60}
+                    aria-label="Display name"
+                    autoFocus
+                  />
+                  <button type="submit" disabled={isSavingDisplayName}>
+                    {isSavingDisplayName ? 'Saving' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDisplayNameInput(displayName);
+                      setDisplayNameError('');
+                      setIsEditingDisplayName(false);
+                    }}
+                    disabled={isSavingDisplayName}
+                  >
+                    Cancel
+                  </button>
+                  {displayNameError && <span className="display-name-error">{displayNameError}</span>}
+                </form>
+              ) : (
+                <>
+                  <span>{displayName}</span>
+                  <button type="button" onClick={() => setIsEditingDisplayName(true)}>Edit</button>
+                </>
+              )}
               <button type="button" onClick={onLogout}>Log out</button>
             </div>
           </div>
@@ -576,6 +666,11 @@ function App() {
     setAuth({ token, user });
   };
 
+  const handleUserUpdate = (user) => {
+    window.sessionStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+    setAuth((currentAuth) => ({ ...currentAuth, user }));
+  };
+
   const handleLogout = async () => {
     window.sessionStorage.removeItem(AUTH_TOKEN_KEY);
     window.sessionStorage.removeItem(AUTH_USER_KEY);
@@ -587,7 +682,14 @@ function App() {
     return <AuthPage onAuthenticated={handleAuthenticated} />;
   }
 
-  return <MainApp user={auth.user} onLogout={handleLogout} />;
+  return (
+    <MainApp
+      user={auth.user}
+      authToken={auth.token}
+      onLogout={handleLogout}
+      onUserUpdate={handleUserUpdate}
+    />
+  );
 }
 
 export default App;

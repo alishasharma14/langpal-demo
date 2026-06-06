@@ -5,6 +5,8 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const authenticateUser = require("../middleware/authMiddleware");
 
+const PUBLIC_USER_COLUMNS = "id, email, display_name, first_name, last_name, native_language, practice_language, created_at";
+
 function ensureAuthConfigured(res) {
     if (supabase && process.env.JWT_SECRET) {
         return true;
@@ -33,6 +35,7 @@ function getPublicUser(user) {
     return {
         id: user.id,
         email: user.email,
+        display_name: user.display_name,
         first_name: user.first_name,
         last_name: user.last_name,
         native_language: user.native_language,
@@ -55,6 +58,11 @@ async function findUserByEmail(email) {
         .select("*")
         .eq("email", email)
         .maybeSingle();
+}
+
+function normalizeDisplayName(displayName) {
+    if (typeof displayName !== "string") return "";
+    return displayName.trim().replace(/\s+/g, " ");
 }
 
 // POST /auth/register
@@ -104,13 +112,14 @@ router.post("/register", async (req, res) => {
                 {
                     email: email,
                     password_hash: passwordHash,
+                    display_name: firstName,
                     first_name: firstName,
                     last_name: lastName,
                     native_language: nativeLanguage,
                     practice_language: practiceLanguage
                 }
             ])
-            .select("id, email, first_name, last_name, native_language, practice_language, created_at")
+            .select(PUBLIC_USER_COLUMNS)
             .single();
         
         // handle any insert errors
@@ -272,13 +281,14 @@ router.post("/langpal-login", async (req, res) => {
                     {
                         email,
                         password_hash: passwordHash,
+                        display_name: displayName,
                         first_name: displayName,
                         last_name: "",
                         native_language: nativeLanguage,
                         practice_language: practiceLanguage
                     }
                 ])
-                .select("id, email, first_name, last_name, native_language, practice_language, created_at")
+                .select(PUBLIC_USER_COLUMNS)
                 .single();
 
             if (insertError) {
@@ -325,6 +335,58 @@ router.post("/langpal-login", async (req, res) => {
     }
 });
 
+// PATCH /auth/me/display-name
+router.patch("/me/display-name", (req, res, next) => {
+    if (!ensureAuthConfigured(res)) return;
+    next();
+}, authenticateUser, async (req, res) => {
+    try {
+        const displayName = normalizeDisplayName(req.body.displayName);
+
+        if (!displayName) {
+            return res.status(400).json({
+                error: "Display name is required."
+            });
+        }
+
+        if (displayName.length > 60) {
+            return res.status(400).json({
+                error: "Display name must be 60 characters or fewer."
+            });
+        }
+
+        const { data: updatedUser, error: updateError } = await supabase
+            .from("users")
+            .update({ display_name: displayName })
+            .eq("id", req.user.id)
+            .select(PUBLIC_USER_COLUMNS)
+            .single();
+
+        if (updateError) {
+            console.error("Display name update error:", updateError);
+            return res.status(500).json({
+                error: "Error updating display name."
+            });
+        }
+
+        await supabase
+            .from("waiting_queue")
+            .update({ display_name: displayName })
+            .eq("user_id", req.user.id);
+
+        return res.status(200).json({
+            message: "Display name updated.",
+            user: updatedUser
+        });
+    } catch (error) {
+        console.error(error);
+
+        return res.status(500).json({
+            error: "Server error."
+        });
+    }
+});
+
 // GET /auth/me
 router.get("/me", (req, res, next) => {
     if (!ensureAuthConfigured(res)) return;
@@ -334,7 +396,7 @@ router.get("/me", (req, res, next) => {
         // find current authenticated user
         const { data: currentUser, error: userError } = await supabase
             .from("users")
-            .select("id, email, first_name, last_name, native_language, practice_language, created_at")
+            .select(PUBLIC_USER_COLUMNS)
             .eq("id", req.user.id)
             .maybeSingle();
         

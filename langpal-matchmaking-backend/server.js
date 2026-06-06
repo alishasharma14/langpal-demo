@@ -67,6 +67,12 @@ function getFallbackDisplayName(userId) {
     return userId ? `User ${String(userId).slice(0, 8)}` : "Partner";
 }
 
+function formatUserDisplayName(user) {
+    if (!user) return "";
+    const firstLastName = user.first_name ? `${user.first_name} ${user.last_name || ""}`.trim() : "";
+    return user.display_name || firstLastName || user.email || "";
+}
+
 function setSocketProfile(socket, { userId, displayName }) {
     socket.userId = userId;
     socket.displayName = displayName || getFallbackDisplayName(userId);
@@ -84,11 +90,12 @@ async function getDisplayName(userId, socket) {
     if (useSupabase) {
         const { data, error } = await supabase
             .from("users")
-            .select("email")
+            .select("email, display_name, first_name, last_name")
             .eq("id", userId)
             .maybeSingle();
 
-        if (!error && data?.email) return data.email;
+        const displayName = formatUserDisplayName(data);
+        if (!error && displayName) return displayName;
     }
 
     return getFallbackDisplayName(userId);

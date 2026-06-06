@@ -118,6 +118,41 @@ body {
     white-space: nowrap;
 }
 
+.display-name-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.display-name-form input {
+    width: 180px;
+    max-width: 45vw;
+    border: 2px solid #FFE4D6;
+    border-radius: 999px;
+    background: #fff;
+    color: #4B5563;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    outline: none;
+    padding: 8px 12px;
+}
+
+.display-name-form input:focus {
+    border-color: #FF6B4A;
+    box-shadow: 0 0 0 3px rgba(255, 107, 74, 0.1);
+}
+
+.auth-status .display-name-error {
+    flex-basis: 100%;
+    max-width: none;
+    color: #E63946;
+    font-size: 12px;
+    text-align: right;
+}
+
 .auth-status button {
     border: 2px solid #FFE4D6;
     border-radius: 999px;
