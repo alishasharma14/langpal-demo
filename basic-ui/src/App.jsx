@@ -5,6 +5,7 @@ import './styles.css';
 import { SignalingClient } from './signalingClient.js';
 import { WebRTCClient } from './webrtc.js';
 import AuthPage from './AuthPage.jsx';
+import { supabase } from './supabaseClient.js';
 
 const LANGUAGES = [
   'Arabic', 'English', 'French', 'German', 'Hindi',
@@ -376,7 +377,7 @@ function MainApp({ user, onLogout }) {
       socketRef.current = null;
       leaveCall();
     };
-  }, [joinRoom, leaveCall, markPartnerLeft, user?.email]);
+  }, [joinRoom, leaveCall, markPartnerLeft, user?.email, user?.first_name, user?.last_name]);
 
   const showLocalVideo = callStatus === 'connecting' || callStatus === 'connected' || callStatus === 'partner-left';
   const showRemoteVideo = callStatus === 'connected';
@@ -563,24 +564,28 @@ function getStoredAuth() {
     }
   }
 
-  // 3. Fallback: generate a random guest for local testing
-  const guestId = `guest-${Math.random().toString(36).substr(2, 9)}`;
-  const user = { id: guestId, email: `Guest ${guestId.slice(6, 10)}` };
-  window.sessionStorage.setItem(AUTH_TOKEN_KEY, 'guest-token');
-  window.sessionStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-  
-  return { token: 'guest-token', user };
+  return { token: '', user: null };
 }
 
 function App() {
-  const [auth] = useState(() => getStoredAuth());
+  const [auth, setAuth] = useState(() => getStoredAuth());
 
-  const handleLogout = () => {
+  const handleAuthenticated = ({ token, user }) => {
+    window.sessionStorage.setItem(AUTH_TOKEN_KEY, token);
+    window.sessionStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+    setAuth({ token, user });
+  };
+
+  const handleLogout = async () => {
     window.sessionStorage.removeItem(AUTH_TOKEN_KEY);
     window.sessionStorage.removeItem(AUTH_USER_KEY);
-    // Refresh to regenerate a new guest or clear state
-    window.location.href = '/';
+    await supabase?.auth.signOut();
+    setAuth({ token: '', user: null });
   };
+
+  if (!auth.token) {
+    return <AuthPage onAuthenticated={handleAuthenticated} />;
+  }
 
   return <MainApp user={auth.user} onLogout={handleLogout} />;
 }

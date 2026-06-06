@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { isSupabaseAuthConfigured, supabase } from './supabaseClient.js';
 
 const getApiUrl = () => {
   const envUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_MATCHMAKING_URL;
@@ -31,6 +32,53 @@ function AuthPage({ onAuthenticated }) {
 
   const isRegister = mode === 'register';
 
+  const exchangeSupabaseSession = useCallback(async (session) => {
+    const accessToken = session?.access_token;
+    if (!accessToken) {
+      throw new Error('Supabase did not return a session token.');
+    }
+
+    const response = await fetch(`${API_URL}/auth/langpal-login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ token: accessToken }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Could not complete LangPal login.');
+    }
+
+    onAuthenticated(data);
+  }, [onAuthenticated]);
+
+  useEffect(() => {
+    if (!supabase) return;
+
+    let isMounted = true;
+
+    supabase.auth.getSession().then(async ({ data, error }) => {
+      if (!isMounted || error || !data.session) return;
+
+      setIsSubmitting(true);
+      setErrorMessage('');
+      try {
+        await exchangeSupabaseSession(data.session);
+      } catch (err) {
+        if (isMounted) setErrorMessage(err.message);
+      } finally {
+        if (isMounted) setIsSubmitting(false);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [exchangeSupabaseSession]);
+
   const switchMode = () => {
     setMode(isRegister ? 'login' : 'register');
     setPassword('');
@@ -42,6 +90,11 @@ function AuthPage({ onAuthenticated }) {
     event.preventDefault();
     setErrorMessage('');
     const trimmedDisplayName = displayName.trim();
+
+    if (!isSupabaseAuthConfigured || !supabase) {
+      setErrorMessage('Supabase Auth is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+      return;
+    }
 
     if (isRegister) {
       if (!trimmedDisplayName) {
@@ -73,37 +126,80 @@ function AuthPage({ onAuthenticated }) {
     setIsSubmitting(true);
 
     try {
-      const payload = isRegister
-        ? {
+      if (isRegister) {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              displayName: trimmedDisplayName,
+              nativeLanguage,
+              practiceLanguage,
+            },
+          },
+        });
+
+        if (error) throw error;
+
+        if (!data.session) {
+          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
             email,
             password,
-            firstName: trimmedDisplayName,
-            lastName: '',
-            nativeLanguage,
-            practiceLanguage
+          });
+
+          if (signInError || !signInData?.session) {
+            setMode('login');
+            setErrorMessage('Account created or already exists in Supabase. Sign in to finish connecting it to LangPal.');
+            return;
           }
-        : { email, password };
 
-      const response = await fetch(`${API_URL}/auth/${isRegister ? 'register' : 'login'}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+          await supabase.auth.updateUser({
+            data: {
+              displayName: trimmedDisplayName,
+              nativeLanguage,
+              practiceLanguage,
+            },
+          });
 
-      const data = await response.json().catch(() => ({}));
+          await exchangeSupabaseSession(signInData.session);
+          return;
+        }
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Authentication failed.');
+        await exchangeSupabaseSession(data.session);
+        return;
       }
 
-      onAuthenticated(data);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      await exchangeSupabaseSession(data.session);
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setErrorMessage('');
+
+    if (!isSupabaseAuthConfigured || !supabase) {
+      setErrorMessage('Supabase Auth is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+
+    if (error) setErrorMessage(error.message);
   };
 
   return (
@@ -273,8 +369,8 @@ function AuthPage({ onAuthenticated }) {
         <button
           type="button"
           className="social-btn"
-          disabled
-          title="Google sign-in is not wired up in this demo yet."
+          onClick={handleGoogleSignIn}
+          disabled={isSubmitting}
         >
           <svg viewBox="0 0 24 24" width="18" height="18">
             <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.92h6.69c-.29 1.5-.1.8-1.5 2.76l3.4 2.64c2-1.84 3.15-4.55 3.15-7.25z"/>

@@ -16,6 +16,47 @@ function ensureAuthConfigured(res) {
     return false;
 }
 
+function signBackendToken(user) {
+    return jwt.sign(
+        {
+            id: user.id,
+            email: user.email
+        },
+        process.env.JWT_SECRET,
+        {
+            expiresIn: "1h"
+        }
+    );
+}
+
+function getPublicUser(user) {
+    return {
+        id: user.id,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        native_language: user.native_language,
+        practice_language: user.practice_language,
+        created_at: user.created_at
+    };
+}
+
+function getMetadataValue(metadata, keys) {
+    for (const key of keys) {
+        if (metadata?.[key]) return metadata[key];
+    }
+
+    return "";
+}
+
+async function findUserByEmail(email) {
+    return supabase
+        .from("users")
+        .select("*")
+        .eq("email", email)
+        .maybeSingle();
+}
+
 // POST /auth/register
 router.post("/register", async (req, res) => {
     try {
@@ -81,20 +122,7 @@ router.post("/register", async (req, res) => {
         }
 
         // generate JWT token for authenticated user
-        const token = jwt.sign(
-            {
-                id: newUser.id,
-                email: newUser.email
-            },
-
-            // secret key used to sign token
-            process.env.JWT_SECRET,
-
-            // token expiration settings
-            {
-                expiresIn: "1h"
-            }
-        );
+        const token = signBackendToken(newUser);
 
         // return response with successful registration message
         return res.status(201).json({
@@ -166,37 +194,129 @@ router.post("/login", async (req, res) => {
         }
 
         // generate JWT token for authenticated user
-        const token = jwt.sign(
-            {
-                id: existingUser.id,
-                email: existingUser.email
-            },
-
-            process.env.JWT_SECRET,
-
-            {
-                expiresIn: "1h"
-            }
-        );
+        const token = signBackendToken(existingUser);
 
         // return response with successful registration message
         return res.status(200).json({
             message: "Login successful.",
             token: token,
-            user: {
-                id: existingUser.id,
-                email: existingUser.email,
-                first_name: existingUser.first_name,
-                last_name: existingUser.last_name,
-                native_language: existingUser.native_language,
-                practice_language: existingUser.practice_language,
-                created_at: existingUser.created_at
-            }
+            user: getPublicUser(existingUser)
         });
 
     } catch(error) {
 
         // handle any unexpected server errors
+        console.error(error);
+
+        return res.status(500).json({
+            error: "Server error."
+        });
+    }
+});
+
+// POST /auth/langpal-login
+router.post("/langpal-login", async (req, res) => {
+    try {
+        if (!ensureAuthConfigured(res)) return;
+
+        const { token: supabaseToken } = req.body;
+
+        if (!supabaseToken) {
+            return res.status(400).json({
+                error: "Supabase token is required."
+            });
+        }
+
+        const { data: authData, error: authError } = await supabase.auth.getUser(supabaseToken);
+
+        if (authError || !authData?.user) {
+            console.error("Supabase token verification error:", authError);
+            return res.status(401).json({
+                error: "Invalid Supabase token."
+            });
+        }
+
+        const authUser = authData.user;
+        const email = authUser.email;
+
+        if (!email) {
+            return res.status(400).json({
+                error: "Supabase user does not have an email address."
+            });
+        }
+
+        const metadata = authUser.user_metadata || {};
+        const displayName =
+            getMetadataValue(metadata, ["displayName", "display_name", "full_name", "name"]) ||
+            email.split("@")[0];
+        const nativeLanguage = getMetadataValue(metadata, ["nativeLanguage", "native_language"]);
+        const practiceLanguage = getMetadataValue(metadata, ["practiceLanguage", "practice_language"]);
+
+        const { data: existingUser, error: existingUserError } = await findUserByEmail(email);
+
+        if (existingUserError) {
+            console.error("LangPal user lookup error:", existingUserError);
+            return res.status(500).json({
+                error: "Error checking existing user."
+            });
+        }
+
+        let appUser = existingUser;
+
+        if (!appUser) {
+            const passwordHash = await bcrypt.hash(`supabase-auth:${authUser.id}`, 10);
+
+            const { data: newUser, error: insertError } = await supabase
+                .from("users")
+                .insert([
+                    {
+                        email,
+                        password_hash: passwordHash,
+                        first_name: displayName,
+                        last_name: "",
+                        native_language: nativeLanguage,
+                        practice_language: practiceLanguage
+                    }
+                ])
+                .select("id, email, first_name, last_name, native_language, practice_language, created_at")
+                .single();
+
+            if (insertError) {
+                if (
+                    insertError.code === "23505" ||
+                    insertError.message?.toLowerCase().includes("duplicate")
+                ) {
+                    const { data: duplicateUser, error: duplicateUserError } = await findUserByEmail(email);
+
+                    if (!duplicateUserError && duplicateUser) {
+                        appUser = duplicateUser;
+                    } else {
+                        console.error("LangPal duplicate user lookup error:", duplicateUserError || insertError);
+                        return res.status(500).json({
+                            error: "Error finding LangPal user."
+                        });
+                    }
+                } else {
+                    console.error("LangPal user insert error:", insertError);
+                    return res.status(500).json({
+                        error: "Error creating LangPal user."
+                    });
+                }
+            }
+
+            if (newUser) {
+                appUser = newUser;
+            }
+        }
+
+        const backendToken = signBackendToken(appUser);
+
+        return res.status(200).json({
+            message: "LangPal login successful.",
+            token: backendToken,
+            user: getPublicUser(appUser)
+        });
+    } catch (error) {
         console.error(error);
 
         return res.status(500).json({
