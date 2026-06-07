@@ -109,13 +109,39 @@ The backend uses Supabase for:
 
 To run the register UI and database-backed matchmaking, add your Supabase credentials to `langpal-matchmaking-backend/.env` (see the Environment Setup section above).
 
+Before testing against a shared Supabase project, run the schema SQL in Supabase SQL Editor:
+
+```text
+langpal-matchmaking-backend/migrations/001_auth_users_schema.sql
+langpal-matchmaking-backend/migrations/002_matchmaking_schema.sql
+langpal-matchmaking-backend/migrations/003_language_matchmaking.sql
+```
+
+If the Supabase tables already existed before the latest auth/profile/matchmaking columns were added, also run:
+
+```text
+langpal-matchmaking-backend/migrations/004_supabase_schema_patches.sql
+```
+
+The patch file is safe to rerun because it uses `add column if not exists`, backfills missing display names, and reloads the Supabase API schema cache.
+
 When those env vars are present:
 
-- users can register and log in
+- users can register and log in through Supabase Auth
 - the backend uses the original Supabase queries and updates
 - queue entries are stored in `waiting_queue`
 - match records are stored in `matches`
 - the existing teammate-written matchmaking flow stays active
+
+The current frontend auth path is:
+
+```text
+Supabase Auth login/register/OAuth -> POST /auth/langpal-login -> backend JWT
+```
+
+The backend still includes legacy `POST /auth/register` and `POST /auth/login`
+routes for older clients or manual backend testing, but new frontend auth work
+should use Supabase Auth plus `/auth/langpal-login`.
 
 When those env vars are missing:
 
@@ -138,11 +164,24 @@ npm start
 2. Register or sign in as a different user in each tab.
 3. Choose languages in both tabs.
 4. Click `Start` in both tabs.
-5. Watch the backend terminal for queue and match logs.
+5. Confirm both users move from queued to connected.
 6. Confirm each frontend tab shows local video and then the partner video.
 7. Confirm camera and microphone permissions are allowed.
 
 This demo intentionally keeps the repos separate and avoids rewriting the original systems.
+
+## Manual Test Checklist
+
+Use this as the quick smoke test before demoing or pushing auth/matchmaking changes.
+
+- Auth register: create a new email/password account, confirm it signs in, creates a `users` row, and shows the expected display name.
+- Auth login: sign out, sign back in with the same email/password account, and confirm the saved display name and language preferences load.
+- OAuth: sign in with Google, confirm `/auth/langpal-login` returns a backend JWT and the user lands on the main matching screen.
+- Queue: with only one user waiting, click `Start` and confirm the UI shows queued/waiting instead of erroring.
+- Match: open a second browser/session with compatible opposite languages and click `Start`; confirm both users connect to the same call.
+- Next: while connected, click `Next` and confirm the old call ends, the short buffer appears, and the user either requeues or matches again.
+- Stop: while queued or connected, click `Stop` and confirm the user returns to idle, leaves the queue, and the partner sees the call ended.
+- Database: check Supabase `waiting_queue` clears after match/stop/disconnect and `matches` records are created/ended as expected.
 
 ### Frontend (`basic-ui`)
 
@@ -159,7 +198,7 @@ Key demo changes:
 
 - preserved the original Supabase flow when env credentials are available
 - added a safe in-memory fallback when Supabase credentials are missing
-- added clearer queue, match, next, and disconnect logs for testing visibility
+- added queue counts plus cleaner next, stop, and disconnect handling
 - kept the same socket event names and overall behavior
 
 ### Signaling Server (`signaling-server`)
@@ -183,37 +222,6 @@ Not fully integrated yet:
 
 - polished call controls shared across matchmaking and video UI
 - a production-ready end-to-end UX
-
-## Debugging
-
-### Frontend console
-
-The frontend logs:
-
-- when `Start` is clicked
-- when `next_partner` is emitted
-- when `match_found` is received
-- when it joins a matched room
-
-### Backend logs
-
-The backend prints readable matchmaking logs, including:
-
-- queue joins
-- queue re-adds
-- matches and room IDs
-- next partner requests
-- disconnects
-
-Example log lines:
-
-```text
-[QUEUE] User abc joined. Queue length: 1
-[QUEUE] User xyz joined. Queue length: 2
-[MATCH] abc matched with xyz in room 1
-[NEXT] User abc requested next partner
-[DISCONNECT] User abc left
-```
 
 ## Notes
 

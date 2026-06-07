@@ -23,26 +23,6 @@ const waitingQueue = [];
 const matches = [];
 let nextMatchId = 1;
 
-function logQueueJoin(userId, queueLength) {
-    console.log(`[QUEUE] User ${userId} joined. Queue length: ${queueLength}`);
-}
-
-function logQueueRejoin(userId, queueLength) {
-    console.log(`[QUEUE] User ${userId} re-added to queue. Queue length: ${queueLength}`);
-}
-
-function logMatch(userId, partnerId, roomId) {
-    console.log(`[MATCH] ${userId} matched with ${partnerId} in room ${roomId}`);
-}
-
-function logNext(userId) {
-    console.log(`[NEXT] User ${userId} requested next partner`);
-}
-
-function logDisconnect(userId) {
-    console.log(`[DISCONNECT] User ${userId} left`);
-}
-
 function findQueuedUserIndex(userId) {
     return waitingQueue.findIndex((entry) => entry.user_id === userId);
 }
@@ -69,8 +49,7 @@ function getFallbackDisplayName(userId) {
 
 function formatUserDisplayName(user) {
     if (!user) return "";
-    const firstLastName = user.first_name ? `${user.first_name} ${user.last_name || ""}`.trim() : "";
-    return user.display_name || firstLastName || user.email || "";
+    return user.display_name || user.email || "";
 }
 
 function setSocketProfile(socket, { userId, displayName }) {
@@ -90,7 +69,7 @@ async function getDisplayName(userId, socket) {
     if (useSupabase) {
         const { data, error } = await supabase
             .from("users")
-            .select("email, display_name, first_name, last_name")
+            .select("email, display_name")
             .eq("id", userId)
             .maybeSingle();
 
@@ -229,14 +208,10 @@ const io = new Server(server, {
 
 // each connected client gets its own socket object
 io.on("connection", (socket) => {
-    console.log("User connection:", socket.id);
-
     // HANDLE MATCHMAKING LOGIC
     socket.on("start_matchmaking", async ({ userId, displayName, nativeLanguage, practiceLanguage }) => {
         try {
             setSocketProfile(socket, { userId, displayName }); // to track which user disconnected
-
-            console.log(`Start matchmaking requested by ${userId} (Native: ${nativeLanguage}, Practice: ${practiceLanguage})`);
 
             if (useSupabase) {
                 // check if user already exists in the queue
@@ -276,15 +251,6 @@ io.on("connection", (socket) => {
                     return;
                 }
 
-                const { count: queueCount, error: queueCountError } = await supabase
-                    .from("waiting_queue")
-                    .select("*", { count: "exact", head: true });
-
-                if (queueCountError) {
-                    console.error("Queue count error:", queueCountError);
-                } else {
-                    logQueueJoin(userId, queueCount ?? 0);
-                }
                 await emitSupabaseQueueCounts();
                 
                 // look for the next available waiting user (oldest first)
@@ -349,8 +315,6 @@ io.on("connection", (socket) => {
                         partnerId: userId,
                         partnerName: socket.displayName
                     });
-
-                    logMatch(userId, partner.user_id, matchData[0].id);
                 } else {
 
                     socket.emit("queued", {
@@ -376,20 +340,13 @@ io.on("connection", (socket) => {
                     practiceLanguage,
                     created_at: Date.now()
                 });
-                logQueueJoin(userId, waitingQueue.length);
                 emitInMemoryQueueCounts();
-                
-                console.log(`[DEBUG] Queue currently has ${waitingQueue.length} users. Looking for match...`);
-                console.log(`[DEBUG] Current user is seeking someone whose Native is ${practiceLanguage} and Practice is ${nativeLanguage}`);
 
                 const waitingUsers = waitingQueue
                     .filter((entry) => {
                         const isNotSelf = entry.user_id !== userId;
                         const nativeMatches = entry.nativeLanguage === practiceLanguage;
                         const practiceMatches = entry.practiceLanguage === nativeLanguage;
-                        
-                        console.log(`[DEBUG] Comparing against user ${entry.user_id} (Native: ${entry.nativeLanguage}, Practice: ${entry.practiceLanguage})`);
-                        console.log(`[DEBUG] -> isNotSelf: ${isNotSelf}, nativeMatches: ${nativeMatches}, practiceMatches: ${practiceMatches}`);
                         
                         return isNotSelf && nativeMatches && practiceMatches;
                     })
@@ -423,8 +380,6 @@ io.on("connection", (socket) => {
                         matchId: matchData[0].id,
                         partnerId: userId
                     });
-
-                    logMatch(userId, partner.user_id, matchData[0].id);
                 } else {
                     socket.emit("queued", {
                         message: "Waiting for a partner...",
@@ -448,7 +403,6 @@ io.on("connection", (socket) => {
     socket.on("next_partner", async ({ userId, displayName, nativeLanguage, practiceLanguage }) => {
         try {
             setSocketProfile(socket, { userId, displayName });
-            logNext(userId);
             
             if (useSupabase) {
                 // find the current active match
@@ -499,15 +453,6 @@ io.on("connection", (socket) => {
                     return;
                 }
 
-                const { count: queueCount, error: queueCountError } = await supabase
-                    .from("waiting_queue")
-                    .select("*", { count: "exact", head: true });
-
-                if (queueCountError) {
-                    console.error("Queue count error:", queueCountError);
-                } else {
-                    logQueueRejoin(userId, queueCount ?? 0);
-                }
                 await emitSupabaseQueueCounts();
 
                 const { data: waitingUsers, error: waitingError } = await supabase
@@ -566,8 +511,6 @@ io.on("connection", (socket) => {
                         partnerId: userId,
                         partnerName: socket.displayName
                     });
-
-                    logMatch(userId, partner.user_id, matchData[0].id);
                 } else {
                     socket.emit("queued", {
                         message: "Re-entered queue",
@@ -595,7 +538,6 @@ io.on("connection", (socket) => {
                     practiceLanguage,
                     created_at: Date.now()
                 });
-                logQueueRejoin(userId, waitingQueue.length);
                 emitInMemoryQueueCounts();
 
                 // Note: The actual matching logic happens when another user joins, 
@@ -636,8 +578,6 @@ io.on("connection", (socket) => {
                         matchId: matchData[0].id,
                         partnerId: userId
                     });
-
-                    logMatch(userId, partner.user_id, matchData[0].id);
                 } else {
                     // emit queued back to the client if no match found
                     socket.emit("queued", {
@@ -666,8 +606,6 @@ io.on("connection", (socket) => {
                 return;
             }
 
-            console.log(`[STOP] User ${userId} stopped matchmaking`);
-
             if (useSupabase) {
                 await stopSupabaseMatchmaking(socket, userId);
             } else {
@@ -690,7 +628,6 @@ io.on("connection", (socket) => {
             const userId = socket.userId;
 
             if (!userId) return;
-            logDisconnect(userId);
 
             if (useSupabase) {
                 // remove them from the waiting_queue just to be sure
@@ -765,7 +702,6 @@ wss.on('connection', (ws) => {
       if (!rooms.has(roomId)) rooms.set(roomId, new Set());
       const room = rooms.get(roomId);
       room.add(ws);
-      console.log(`[WEBRTC ${roomId}] peer joined (${room.size} in room)`);
 
       ws.send(JSON.stringify({ type: 'joined', roomId, peerCount: room.size }));
 
@@ -795,7 +731,6 @@ wss.on('connection', (ws) => {
       const room = rooms.get(currentRoom);
       if (room) {
         room.delete(ws);
-        console.log(`[WEBRTC ${currentRoom}] peer left (${room.size} remaining)`);
         room.forEach((peer) => {
           if (peer.readyState === WebSocket.OPEN) {
             peer.send(JSON.stringify({ type: 'peer-left', roomId: currentRoom }));

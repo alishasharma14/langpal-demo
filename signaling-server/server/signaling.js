@@ -17,8 +17,16 @@ const MIME = {
 const server = http.createServer((req, res) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
   const pathname = requestUrl.pathname;
-  const requestedFile = pathname === '/' ? 'index.html' : pathname;
-  const filePath = path.join(CLIENT_DIR, requestedFile);
+  const requestedFile = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
+  const filePath = path.resolve(CLIENT_DIR, requestedFile);
+  const isClientFile = filePath === CLIENT_DIR || filePath.startsWith(`${CLIENT_DIR}${path.sep}`);
+
+  if (!isClientFile) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
+
   const ext = path.extname(filePath);
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
@@ -51,7 +59,6 @@ wss.on('connection', (ws) => {
       if (!rooms.has(roomId)) rooms.set(roomId, new Set());
       const room = rooms.get(roomId);
       room.add(ws);
-      console.log(`[${roomId}] peer joined (${room.size} in room)`);
 
       ws.send(JSON.stringify({ type: 'joined', roomId, peerCount: room.size }));
 
@@ -82,7 +89,6 @@ wss.on('connection', (ws) => {
       const room = rooms.get(currentRoom);
       if (room) {
         room.delete(ws);
-        console.log(`[${currentRoom}] peer left (${room.size} remaining)`);
         room.forEach((peer) => {
           if (peer.readyState === WebSocket.OPEN) {
             peer.send(JSON.stringify({ type: 'peer-left', roomId: currentRoom }));

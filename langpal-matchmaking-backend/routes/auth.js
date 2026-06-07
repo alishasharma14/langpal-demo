@@ -5,6 +5,9 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const authenticateUser = require("../middleware/authMiddleware");
 
+// `display_name` is the app-level public name shown in LangPal Live.
+// `first_name` and `last_name` are legacy compatibility fields kept for older
+// clients/schema history; new public-name behavior should use `display_name`.
 const PUBLIC_USER_COLUMNS = "id, email, display_name, first_name, last_name, native_language, practice_language, created_at";
 
 function ensureAuthConfigured(res) {
@@ -36,6 +39,7 @@ function getPublicUser(user) {
         id: user.id,
         email: user.email,
         display_name: user.display_name,
+        // Legacy compatibility fields. LangPal Live public UI uses display_name.
         first_name: user.first_name,
         last_name: user.last_name,
         native_language: user.native_language,
@@ -64,6 +68,13 @@ function normalizeDisplayName(displayName) {
     if (typeof displayName !== "string") return "";
     return displayName.trim().replace(/\s+/g, " ");
 }
+
+// Legacy custom-auth routes.
+//
+// The current LangPal Live frontend uses Supabase Auth directly, then exchanges
+// the Supabase session token through POST /auth/langpal-login for a backend JWT.
+// Keep /auth/register and /auth/login for older clients/manual backend testing
+// until the team confirms Supabase Auth is the only supported login path.
 
 // POST /auth/register
 router.post("/register", async (req, res) => {
@@ -113,6 +124,7 @@ router.post("/register", async (req, res) => {
                     email: email,
                     password_hash: passwordHash,
                     display_name: firstName,
+                    // Legacy compatibility fields for older custom-auth clients.
                     first_name: firstName,
                     last_name: lastName,
                     native_language: nativeLanguage,
@@ -223,6 +235,10 @@ router.post("/login", async (req, res) => {
     }
 });
 
+// Current frontend auth bridge for Supabase email/password and Google OAuth.
+// Verifies the Supabase session token, finds or creates the app-level users row,
+// and returns the backend JWT used by matchmaking.
+
 // POST /auth/langpal-login
 router.post("/langpal-login", async (req, res) => {
     try {
@@ -282,6 +298,7 @@ router.post("/langpal-login", async (req, res) => {
                         email,
                         password_hash: passwordHash,
                         display_name: displayName,
+                        // Legacy compatibility fields. Do not use these for public UI identity.
                         first_name: displayName,
                         last_name: "",
                         native_language: nativeLanguage,

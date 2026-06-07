@@ -39,8 +39,7 @@ const AUTH_TOKEN_KEY = 'langpalAuthToken';
 const AUTH_USER_KEY = 'langpalAuthUser';
 
 function getUserDisplayName(user) {
-  const firstLastName = user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : '';
-  return user?.display_name || firstLastName || user?.email || 'You';
+  return user?.display_name || user?.email || 'You';
 }
 
 function getBootstrapState() {
@@ -237,9 +236,7 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
     webrtc.onRemoteStream = (stream) => {
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = stream;
-        remoteVideoRef.current.play().catch((err) => {
-          console.warn('[FRONTEND] Remote video play failed on stream set:', err);
-        });
+        remoteVideoRef.current.play().catch(() => {});
       }
       setCallStatus('connected');
       callStartTimeRef.current = Date.now();
@@ -285,9 +282,7 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
       const stream = await webrtc.startLocalStream();
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
-        localVideoRef.current.play().catch((err) => {
-          console.warn('[FRONTEND] Local video play failed on stream set:', err);
-        });
+        localVideoRef.current.play().catch(() => {});
       }
       setCallStatus((prev) => (prev === 'connected' ? 'connected' : 'connecting'));
       if (peerReadyPendingRef.current) {
@@ -302,11 +297,6 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
   const handleStartChat = () => {
     if (isStartDisabled || !socketRef.current || !userIdRef.current) return;
 
-    console.log('[FRONTEND] Start clicked', {
-      userId: userIdRef.current,
-      nativeLanguage,
-      practiceLanguage,
-    });
     setIsChatActive(true);
     setStatusMessage('Joining matchmaking queue...');
     setMessages([]);
@@ -326,11 +316,6 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
     if (!socketRef.current || !userIdRef.current || isFindingNext) return;
     leaveCall();
 
-    console.log('[FRONTEND] Preparing next_partner', {
-      userId: userIdRef.current,
-      nativeLanguage,
-      practiceLanguage,
-    });
     setIsChatActive(true);
     setStatusMessage('Looking for a new partner...');
     setIsFindingNext(true);
@@ -344,12 +329,6 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
       setIsFindingNext(false);
 
       if (!socketRef.current || !userIdRef.current) return;
-
-      console.log('[FRONTEND] Emitting next_partner', {
-        userId: userIdRef.current,
-        nativeLanguage: languagesRef.current.nativeLanguage,
-        practiceLanguage: languagesRef.current.practiceLanguage,
-      });
 
       socketRef.current.emit('next_partner', {
         userId: userIdRef.current,
@@ -415,9 +394,6 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
       ) {
         setIsChatActive(true);
         setStatusMessage('Rejoining matchmaking queue...');
-        console.log('[FRONTEND] Rejoining matchmaking queue', {
-          userId: userIdRef.current,
-        });
         socket.emit('start_matchmaking', {
           userId: userIdRef.current,
           displayName,
@@ -457,7 +433,6 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
 
     socket.on('match_found', ({ matchId, partnerName: incomingPartnerName }) => {
       const roomId = String(matchId);
-      console.log('[FRONTEND] match_found received', { userId: userIdRef.current, roomId, partnerName: incomingPartnerName });
       if (incomingPartnerName) {
         setPartnerName(incomingPartnerName);
       }
@@ -478,7 +453,7 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
       socketRef.current = null;
       leaveCall();
     };
-  }, [displayName, joinRoom, leaveCall, markPartnerLeft, user?.email, user?.first_name, user?.last_name]);
+  }, [displayName, joinRoom, leaveCall, markPartnerLeft, user?.email]);
 
   const showLocalVideo = callStatus === 'connecting' || callStatus === 'connected' || callStatus === 'partner-left';
   const showRemoteVideo = callStatus === 'connected';
@@ -486,20 +461,14 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
   // Autoplay remote video when it becomes visible
   useEffect(() => {
     if (showRemoteVideo && remoteVideoRef.current && remoteVideoRef.current.srcObject) {
-      console.log('[FRONTEND] showRemoteVideo is active, calling play()');
-      remoteVideoRef.current.play().catch((err) => {
-        console.warn('[FRONTEND] Remote video play failed in useEffect:', err);
-      });
+      remoteVideoRef.current.play().catch(() => {});
     }
   }, [showRemoteVideo]);
 
   // Autoplay local video when it becomes visible
   useEffect(() => {
     if (showLocalVideo && localVideoRef.current && localVideoRef.current.srcObject) {
-      console.log('[FRONTEND] showLocalVideo is active, calling play()');
-      localVideoRef.current.play().catch((err) => {
-        console.warn('[FRONTEND] Local video play failed in useEffect:', err);
-      });
+      localVideoRef.current.play().catch(() => {});
     }
   }, [showLocalVideo]);
 
@@ -680,21 +649,15 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
 }
 
 function getStoredAuth() {
-  const params = new URLSearchParams(window.location.search);
-  const urlUserId = params.get('userId');
-  const urlEmail = params.get('email');
-
-  // 1. If coming from the main landing page via URL parameters
-  if (urlUserId) {
-    const user = { id: urlUserId, email: urlEmail || `User ${urlUserId}` };
-    window.sessionStorage.setItem(AUTH_TOKEN_KEY, 'linked-token');
-    window.sessionStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-    return { token: 'linked-token', user };
-  }
-
-  // 2. Check local storage
+  // Only trust sessions created by Supabase Auth -> /auth/langpal-login.
   const token = window.sessionStorage.getItem(AUTH_TOKEN_KEY);
   const storedUser = window.sessionStorage.getItem(AUTH_USER_KEY);
+
+  if (token === 'linked-token') {
+    window.sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    window.sessionStorage.removeItem(AUTH_USER_KEY);
+    return { token: '', user: null };
+  }
 
   if (token && storedUser) {
     try {
