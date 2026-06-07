@@ -73,10 +73,12 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
   const [displayNameInput, setDisplayNameInput] = useState(() => getUserDisplayName(user));
   const [displayNameError, setDisplayNameError] = useState('');
   const [isSavingDisplayName, setIsSavingDisplayName] = useState(false);
+  const [isFindingNext, setIsFindingNext] = useState(false);
 
   const callStartTimeRef = useRef(null);
   const partnerNameRef = useRef('Partner');
   const displayName = getUserDisplayName(user);
+  const nextPartnerTimeoutRef = useRef(null);
 
   const messagesEndRef = useRef(null);
   const socketRef = useRef(null);
@@ -177,12 +179,19 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
   }, []);
 
   const stopCall = useCallback(() => {
+    if (nextPartnerTimeoutRef.current) {
+      window.clearTimeout(nextPartnerTimeoutRef.current);
+      nextPartnerTimeoutRef.current = null;
+    }
+
     leaveCall();
+    setIsFindingNext(false);
     setIsChatActive(false);
     setMessages([]);
     setInputText('');
     setPartnerName('Partner');
     setCallDuration(0);
+    setQueueCount(0);
     callStartTimeRef.current = null;
     setStatusMessage('Select languages and click Start to connect.');
   }, [leaveCall]);
@@ -314,27 +323,52 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
   };
 
   const handleNext = () => {
-    if (!socketRef.current || !userIdRef.current) return;
+    if (!socketRef.current || !userIdRef.current || isFindingNext) return;
     leaveCall();
 
-    console.log('[FRONTEND] Emitting next_partner', {
+    console.log('[FRONTEND] Preparing next_partner', {
       userId: userIdRef.current,
       nativeLanguage,
       practiceLanguage,
     });
     setIsChatActive(true);
     setStatusMessage('Looking for a new partner...');
+    setIsFindingNext(true);
     setMessages([]);
     setPartnerName('Partner');
     setCallDuration(0);
     callStartTimeRef.current = null;
 
-    socketRef.current.emit('next_partner', {
-      userId: userIdRef.current,
-      displayName,
-      nativeLanguage,
-      practiceLanguage,
-    });
+    nextPartnerTimeoutRef.current = window.setTimeout(() => {
+      nextPartnerTimeoutRef.current = null;
+      setIsFindingNext(false);
+
+      if (!socketRef.current || !userIdRef.current) return;
+
+      console.log('[FRONTEND] Emitting next_partner', {
+        userId: userIdRef.current,
+        nativeLanguage: languagesRef.current.nativeLanguage,
+        practiceLanguage: languagesRef.current.practiceLanguage,
+      });
+
+      socketRef.current.emit('next_partner', {
+        userId: userIdRef.current,
+        displayName,
+        nativeLanguage: languagesRef.current.nativeLanguage,
+        practiceLanguage: languagesRef.current.practiceLanguage,
+      });
+    }, 1500);
+  };
+
+  const handleStop = () => {
+    if (socketRef.current && userIdRef.current) {
+      socketRef.current.emit('stop_matchmaking', {
+        userId: userIdRef.current,
+        displayName,
+      });
+    }
+
+    stopCall();
   };
 
   const handleSendMessage = () => {
@@ -417,6 +451,10 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
       setStatusMessage(message || 'Matchmaking update received.');
     });
 
+    socket.on('stopped', ({ message }) => {
+      setStatusMessage(message || 'Stopped matchmaking.');
+    });
+
     socket.on('match_found', ({ matchId, partnerName: incomingPartnerName }) => {
       const roomId = String(matchId);
       console.log('[FRONTEND] match_found received', { userId: userIdRef.current, roomId, partnerName: incomingPartnerName });
@@ -432,6 +470,10 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
     });
 
     return () => {
+      if (nextPartnerTimeoutRef.current) {
+        window.clearTimeout(nextPartnerTimeoutRef.current);
+        nextPartnerTimeoutRef.current = null;
+      }
       socket.disconnect();
       socketRef.current = null;
       leaveCall();
@@ -543,9 +585,16 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
             <button
               className="next-btn"
               onClick={handleNext}
+              disabled={!isChatActive || isFindingNext}
+            >
+              {isFindingNext ? 'Finding...' : 'Next'}
+            </button>
+            <button
+              className="stop-chat-btn"
+              onClick={handleStop}
               disabled={!isChatActive}
             >
-              Next
+              Stop
             </button>
           </div>
         </div>
@@ -569,8 +618,10 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
               <div className="post-call-card">
                 <h3>{partnerName} left</h3>
                 <p>Call duration: {formatDuration(callDuration)}</p>
-                <button className="next-match-btn" onClick={handleNext}>Find New Match</button>
-                <button className="stop-btn" onClick={stopCall}>Stop</button>
+                <button className="next-match-btn" onClick={handleNext} disabled={isFindingNext}>
+                  {isFindingNext ? 'Finding...' : 'Find New Match'}
+                </button>
+                <button className="stop-btn" onClick={handleStop}>Stop</button>
               </div>
             ) : !showRemoteVideo ? (
               <span>{isChatActive ? statusMessage : 'Waiting for connection...'}</span>

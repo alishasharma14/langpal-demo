@@ -169,6 +169,53 @@ async function emitSupabaseQueueCounts() {
     }));
 }
 
+async function stopSupabaseMatchmaking(socket, userId) {
+    await supabase
+        .from("waiting_queue")
+        .delete()
+        .eq("user_id", userId);
+
+    await emitSupabaseQueueCounts();
+
+    const { data: activeMatches, error: activeMatchesError } = await supabase
+        .from("matches")
+        .select("*")
+        .eq("status", "active")
+        .or(`user1_id.eq.${userId},user2_id.eq.${userId}`);
+
+    if (activeMatchesError) {
+        console.error("Stop matchmaking active match query error:", activeMatchesError);
+        throw activeMatchesError;
+    }
+
+    if (activeMatches && activeMatches.length > 0) {
+        await Promise.all(activeMatches.map(async (match) => {
+            await notifyPartnerDisconnected(match, userId, socket);
+
+            const { error: updateError } = await supabase
+                .from("matches")
+                .update({ status: "ended" })
+                .eq("id", match.id);
+
+            if (updateError) {
+                console.error("Stop matchmaking match update error:", updateError);
+            }
+        }));
+    }
+}
+
+async function stopInMemoryMatchmaking(socket, userId) {
+    removeQueuedUser(userId);
+    emitInMemoryQueueCounts();
+
+    const activeMatch = findActiveMatch(userId);
+
+    if (activeMatch) {
+        await notifyPartnerDisconnected(activeMatch, userId, socket);
+        activeMatch.status = "ended";
+    }
+}
+
 // creates SOCKET.IO server and attaches to HTTP server
 const io = new Server(server, {
     cors: {
@@ -606,6 +653,31 @@ io.on("connection", (socket) => {
 
             console.error(error);
             socket.emit("info", { message: "Server error." });
+        }
+    });
+
+    // HANDLE STOP MATCHMAKING WITHOUT DISCONNECTING THE SOCKET
+    socket.on("stop_matchmaking", async ({ userId, displayName }) => {
+        try {
+            setSocketProfile(socket, { userId, displayName });
+
+            if (!userId) {
+                socket.emit("info", { message: "No active user to stop." });
+                return;
+            }
+
+            console.log(`[STOP] User ${userId} stopped matchmaking`);
+
+            if (useSupabase) {
+                await stopSupabaseMatchmaking(socket, userId);
+            } else {
+                await stopInMemoryMatchmaking(socket, userId);
+            }
+
+            socket.emit("stopped", { message: "Stopped matchmaking." });
+        } catch (error) {
+            console.error(error);
+            socket.emit("info", { message: "Error stopping matchmaking." });
         }
     });
 
