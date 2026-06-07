@@ -1,31 +1,51 @@
 # LangPal Demo
 
-This folder contains 3 separate repos that work together for the demo:
+LangPal Demo is a local integration of the LangPal Live frontend, the matchmaking backend, and the WebRTC signaling server. It lets authenticated users choose language preferences, enter a queue, match with a compatible partner, start a video call, chat over a WebRTC data channel, find the next partner, or stop matchmaking cleanly.
 
-- `basic-ui`: React frontend on `http://localhost:5173`
-- `langpal-matchmaking-backend`: Socket.IO matchmaking backend on `http://localhost:3000`
-- `signaling-server`: WebRTC signaling server on `ws://localhost:8080`
+This repo is intentionally organized as three project folders because the pieces were originally built separately:
 
-The repos stay separate. The frontend sends users into matchmaking, the backend pairs them, and matched users join the same embedded WebRTC room.
+- `basic-ui`: React/Vite frontend
+- `langpal-matchmaking-backend`: Express, Socket.IO, Supabase auth bridge, matchmaking, and optional embedded WebRTC signaling
+- `signaling-server`: standalone WebRTC signaling server for local/demo use
 
-## Repositories
+## Current Flow
 
-- Frontend: https://github.com/Manaskumm/basic-ui
-- Backend: https://github.com/kashish-1703/langpal-matchmaking-backend
+```text
+Supabase Auth register/login/Google OAuth
+-> POST /auth/langpal-login
+-> backend JWT + app-level users row
+-> Socket.IO matchmaking queue
+-> compatible match by native/practice language
+-> WebRTC signaling room
+-> peer-to-peer video/audio + data-channel chat
+```
 
-These repos were originally authored separately. This demo setup keeps that structure intact and only adds minimal connection work between them.
+The app-level public identity is `users.display_name`. The `first_name` and `last_name` columns still exist for legacy compatibility, but new UI identity should use `display_name`.
+
+## Project Structure
+
+```text
+basic-ui/
+  React frontend, auth screens, matchmaking UI, WebRTC client
+
+langpal-matchmaking-backend/
+  Express auth routes, Socket.IO matchmaking, Supabase migrations
+
+signaling-server/
+  Standalone WebRTC signaling server and small test client page
+```
 
 ## Ports
 
-The demo uses these ports consistently:
+- Frontend: `http://localhost:5173`
+- Matchmaking backend: `http://localhost:3000`
+- Standalone signaling server: `ws://localhost:8080`
 
-- Frontend: `5173`
-- Matchmaking backend: `3000`
-- WebRTC signaling server: `8080`
+The matchmaking backend also has a `/webrtc` WebSocket path for single-service deployment. Local development currently uses the standalone `signaling-server` through `VITE_SIGNALING_WS_URL`.
 
 ## Environment Setup
 
-Each repo requires a `.env` file. Copy the example and fill in the values:
+Create local `.env` files from the examples:
 
 ```bash
 cp basic-ui/.env.example basic-ui/.env
@@ -39,21 +59,29 @@ cp signaling-server/.env.example signaling-server/.env
 VITE_MATCHMAKING_URL=http://localhost:3000
 VITE_API_URL=http://localhost:3000
 VITE_SIGNALING_WS_URL=ws://localhost:8080
+
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
 ### `langpal-matchmaking-backend/.env`
 
 ```env
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+JWT_SECRET=your_long_random_jwt_secret
+
 PORT=3000
 CORS_ORIGIN=http://localhost:5173
-
-# Required for auth and Supabase-backed matchmaking
-SUPABASE_URL=your_supabase_url_here
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
-JWT_SECRET=your_long_random_jwt_secret_here
 ```
 
-`CORS_ORIGIN` accepts a comma-separated list if you need to allow multiple origins (e.g. `http://localhost:5173,https://your-app.example.com`).
+`SUPABASE_SERVICE_ROLE_KEY` is required on the backend because `/auth/langpal-login` verifies Supabase Auth tokens and creates/updates app-level rows. Never put the service role key in frontend env.
+
+`CORS_ORIGIN` accepts a comma-separated list if needed:
+
+```env
+CORS_ORIGIN=http://localhost:5173,https://your-vercel-url.vercel.app
+```
 
 ### `signaling-server/.env`
 
@@ -61,9 +89,33 @@ JWT_SECRET=your_long_random_jwt_secret_here
 PORT=8080
 ```
 
+## Supabase Setup
+
+The backend uses these Supabase tables:
+
+- `users`
+- `waiting_queue`
+- `matches`
+
+For a fresh Supabase project, run these in Supabase SQL Editor:
+
+```text
+langpal-matchmaking-backend/migrations/001_auth_users_schema.sql
+langpal-matchmaking-backend/migrations/002_matchmaking_schema.sql
+langpal-matchmaking-backend/migrations/003_language_matchmaking.sql
+```
+
+If the shared Supabase project already had older versions of these tables, also run:
+
+```text
+langpal-matchmaking-backend/migrations/004_supabase_schema_patches.sql
+```
+
+The patch migration is safe to rerun. It uses `add column if not exists`, backfills missing `display_name` values, and reloads the Supabase API schema cache.
+
 ## Install
 
-Run installs once in each repo:
+Run installs once in each folder:
 
 ```bash
 cd basic-ui
@@ -76,9 +128,9 @@ cd ../signaling-server
 npm install
 ```
 
-## Start The Demo
+## Run Locally
 
-Use 3 terminals:
+Use three terminals.
 
 ### Terminal 1: Frontend
 
@@ -87,69 +139,12 @@ cd basic-ui
 npm run dev
 ```
 
-### Terminal 2: Matchmaking backend
+### Terminal 2: Matchmaking Backend
 
 ```bash
 cd langpal-matchmaking-backend
 npm start
 ```
-
-The backend supports Supabase-backed auth and matchmaking:
-
-- If `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `JWT_SECRET` are present, registration, login, and Supabase matchmaking work.
-- If Supabase credentials are missing, the server can still start, but the register/login UI will not work.
-
-### Supabase Backend Mode
-
-The backend uses Supabase for:
-
-- `users`
-- `waiting_queue`
-- `matches`
-
-To run the register UI and database-backed matchmaking, add your Supabase credentials to `langpal-matchmaking-backend/.env` (see the Environment Setup section above).
-
-Before testing against a shared Supabase project, run the schema SQL in Supabase SQL Editor:
-
-```text
-langpal-matchmaking-backend/migrations/001_auth_users_schema.sql
-langpal-matchmaking-backend/migrations/002_matchmaking_schema.sql
-langpal-matchmaking-backend/migrations/003_language_matchmaking.sql
-```
-
-If the Supabase tables already existed before the latest auth/profile/matchmaking columns were added, also run:
-
-```text
-langpal-matchmaking-backend/migrations/004_supabase_schema_patches.sql
-```
-
-The patch file is safe to rerun because it uses `add column if not exists`, backfills missing display names, and reloads the Supabase API schema cache.
-
-When those env vars are present:
-
-- users can register and log in through Supabase Auth
-- the backend uses the original Supabase queries and updates
-- queue entries are stored in `waiting_queue`
-- match records are stored in `matches`
-- the existing teammate-written matchmaking flow stays active
-
-The current frontend auth path is:
-
-```text
-Supabase Auth login/register/OAuth -> POST /auth/langpal-login -> backend JWT
-```
-
-The backend still includes legacy `POST /auth/register` and `POST /auth/login`
-routes for older clients or manual backend testing, but new frontend auth work
-should use Supabase Auth plus `/auth/langpal-login`.
-
-When those env vars are missing:
-
-- the server still starts
-- auth routes return a configuration error
-- direct socket matchmaking can fall back to in-memory mode for local backend-only testing
-
-That fallback is only for backend testing convenience. It is not enough for the current register-first UI.
 
 ### Terminal 3: Signaling Server
 
@@ -158,71 +153,122 @@ cd signaling-server
 npm start
 ```
 
-## Demo Flow
+Then open `http://localhost:5173`.
 
-1. Open `http://localhost:5173` in 2 browser tabs.
-2. Register or sign in as a different user in each tab.
-3. Choose languages in both tabs.
-4. Click `Start` in both tabs.
-5. Confirm both users move from queued to connected.
-6. Confirm each frontend tab shows local video and then the partner video.
-7. Confirm camera and microphone permissions are allowed.
+## Auth Notes
 
-This demo intentionally keeps the repos separate and avoids rewriting the original systems.
+The current frontend uses Supabase Auth directly for:
+
+- email/password registration
+- email/password login
+- Google OAuth
+
+After Supabase Auth succeeds, the frontend sends the Supabase session token to:
+
+```text
+POST /auth/langpal-login
+```
+
+The backend verifies that token with Supabase, finds or creates the app-level row in `users`, and returns the backend JWT used for app routes like display-name updates.
+
+The backend still includes legacy routes:
+
+```text
+POST /auth/register
+POST /auth/login
+```
+
+Those are kept for compatibility/manual testing. New frontend auth work should use Supabase Auth plus `/auth/langpal-login`.
+
+## Matchmaking Notes
+
+Matchmaking is language-aware:
+
+- user A's `practice_language` must match user B's `native_language`
+- user A's `native_language` must match user B's `practice_language`
+
+There is no random fallback match. If no compatible partner exists, the user stays queued.
+
+Queue entries store:
+
+- `user_id`
+- `socket_id`
+- `display_name`
+- `native_language`
+- `practice_language`
+
+Matches are stored in `matches` and marked `ended` when users stop, disconnect, or move to the next partner.
+
+## Checks
+
+Run these before pushing meaningful changes:
+
+```bash
+cd basic-ui
+npm run lint
+npm run build
+
+cd ../langpal-matchmaking-backend
+npm test
+
+cd ../signaling-server
+node --check server/signaling.js
+```
 
 ## Manual Test Checklist
 
-Use this as the quick smoke test before demoing or pushing auth/matchmaking changes.
+Use this as the smoke test before demoing or shipping auth/matchmaking changes:
 
-- Auth register: create a new email/password account, confirm it signs in, creates a `users` row, and shows the expected display name.
-- Auth login: sign out, sign back in with the same email/password account, and confirm the saved display name and language preferences load.
-- OAuth: sign in with Google, confirm `/auth/langpal-login` returns a backend JWT and the user lands on the main matching screen.
-- Queue: with only one user waiting, click `Start` and confirm the UI shows queued/waiting instead of erroring.
-- Match: open a second browser/session with compatible opposite languages and click `Start`; confirm both users connect to the same call.
-- Next: while connected, click `Next` and confirm the old call ends, the short buffer appears, and the user either requeues or matches again.
-- Stop: while queued or connected, click `Stop` and confirm the user returns to idle, leaves the queue, and the partner sees the call ended.
-- Database: check Supabase `waiting_queue` clears after match/stop/disconnect and `matches` records are created/ended as expected.
+- Register with email/password and confirm a `users` row exists with `email`, `display_name`, `native_language`, and `practice_language`.
+- Sign out and sign back in with email/password.
+- Sign in with Google OAuth and confirm it lands on the main matching screen.
+- Edit the top-right display name and confirm it updates in `users.display_name`.
+- Queue one user and confirm the UI waits instead of erroring.
+- Queue a second compatible user and confirm both users connect.
+- Confirm local and remote video appear after camera/mic permission.
+- Send a chat message during a connected call.
+- Click `Next` and confirm the old match ends before requeueing.
+- Click `Stop` while queued and while connected.
+- Check Supabase: `waiting_queue` should clear after match/stop/disconnect, and `matches.status` should update when calls end.
 
-### Frontend (`basic-ui`)
+## Deployment Notes
 
-Key demo changes:
+Typical deployment shape:
 
-- connected the existing `Start` button to the matchmaking backend using Socket.IO
-- listens for `match_found`
-- joins the matched WebRTC room inside the frontend
-- shows register/login before matchmaking so Supabase user IDs are used in the queue
+- `basic-ui` -> Vercel
+- `langpal-matchmaking-backend` -> Render/Railway
+- `signaling-server` -> Render/Railway, unless using the backend's embedded `/webrtc` path
 
-### Backend (`langpal-matchmaking-backend`)
+Frontend production env should point at deployed backend URLs:
 
-Key demo changes:
+```env
+VITE_MATCHMAKING_URL=https://your-backend.example.com
+VITE_API_URL=https://your-backend.example.com
+VITE_SIGNALING_WS_URL=wss://your-signaling.example.com
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
 
-- preserved the original Supabase flow when env credentials are available
-- added a safe in-memory fallback when Supabase credentials are missing
-- added queue counts plus cleaner next, stop, and disconnect handling
-- kept the same socket event names and overall behavior
+Backend production env must include:
 
-### Signaling Server (`signaling-server`)
+```env
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+JWT_SECRET=your_long_random_jwt_secret
+CORS_ORIGIN=https://your-frontend.example.com
+```
 
-Key demo changes:
+If deploying backend and signaling as one combined service, set `VITE_SIGNALING_WS_URL` to the backend WebSocket path, for example:
 
-- runs the WebRTC signaling server used by the embedded frontend call
-- relays WebRTC offer, answer, and ICE messages between peers in a room
-- reads `PORT` from `signaling-server/.env`
+```env
+VITE_SIGNALING_WS_URL=wss://your-backend.example.com/webrtc
+```
 
-## Demo Scope
+## Keep In Mind
 
-This is a working demo integration, not a full product-level UI integration.
-
-For the demo:
-
-- the frontend and WebRTC signaling server are connected enough to test matchmaking and room handoff
-- WebRTC is embedded in the React UI using the signaling server
-
-Not fully integrated yet:
-
-- polished call controls shared across matchmaking and video UI
-- a production-ready end-to-end UX
-
-## Notes
-
-- Matchmaking behavior was not rewritten; the setup was only cleaned up for easier local testing.
+- Do not commit real `.env` files or Supabase secrets.
+- The frontend must use the Supabase anon key only; the backend uses the service role key.
+- Socket.IO matchmaking currently trusts the `userId` sent by the client. That is okay for the demo, but production should authenticate socket connections with the backend JWT.
+- `first_name` and `last_name` are legacy fields. Public identity should be `display_name`.
+- The in-memory matchmaking fallback is for backend-only testing when Supabase env vars are missing. It is not enough for the current register-first frontend.
+- `signaling-server` and backend `/webrtc` overlap. Keep both only if the team wants separate local and deployment options.
