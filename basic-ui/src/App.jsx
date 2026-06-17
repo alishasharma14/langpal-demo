@@ -384,8 +384,6 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      setStatusMessage('Connected to matchmaking.');
-
       if (
         languagesRef.current.nativeLanguage &&
         languagesRef.current.practiceLanguage &&
@@ -577,6 +575,9 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
               playsInline
               style={{ display: showRemoteVideo ? 'block' : 'none' }}
             />
+            {showRemoteVideo && (
+              <div className="video-name-label">{partnerName}</div>
+            )}
             {!showRemoteVideo && callStatus === 'queued' ? (
               <div className="queue-counter">
                 {queueCount === 0
@@ -604,6 +605,9 @@ function MainApp({ user, authToken, onLogout, onUserUpdate }) {
               playsInline
               style={{ display: showLocalVideo ? 'block' : 'none' }}
             />
+            {showLocalVideo && (
+              <div className="video-name-label">{displayName}</div>
+            )}
             {!showLocalVideo && <span>You</span>}
           </div>
         </div>
