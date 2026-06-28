@@ -1,12 +1,11 @@
 # LangPal Demo
 
-LangPal Demo is a local integration of the LangPal Live frontend, the matchmaking backend, and the WebRTC signaling server. It lets authenticated users choose language preferences, enter a queue, match with a compatible partner, start a video call, chat over a WebRTC data channel, find the next partner, or stop matchmaking cleanly.
+LangPal Demo is a local integration of the LangPal Live frontend and the matchmaking backend. It lets authenticated users choose language preferences, enter a queue, match with a compatible partner, start a video call, chat over a WebRTC data channel, find the next partner, or stop matchmaking cleanly.
 
-This repo is intentionally organized as three project folders because the pieces were originally built separately:
+This repo is organized as two project folders:
 
 - `basic-ui`: React/Vite frontend
-- `langpal-matchmaking-backend`: Express, Socket.IO, Supabase auth bridge, matchmaking, and optional embedded WebRTC signaling
-- `signaling-server`: standalone WebRTC signaling server for local/demo use
+- `langpal-matchmaking-backend`: Express, Socket.IO, Supabase auth bridge, matchmaking, and embedded WebRTC signaling at `/webrtc`
 
 ## Current Flow
 
@@ -29,19 +28,14 @@ basic-ui/
   React frontend, auth screens, matchmaking UI, WebRTC client
 
 langpal-matchmaking-backend/
-  Express auth routes, Socket.IO matchmaking, Supabase migrations
-
-signaling-server/
-  Standalone WebRTC signaling server and small test client page
+  Express auth routes, Socket.IO matchmaking, Supabase migrations,
+  and WebRTC signaling at the /webrtc WebSocket path
 ```
 
 ## Ports
 
 - Frontend: `http://localhost:5173`
-- Matchmaking backend: `http://localhost:3000`
-- Standalone signaling server: `ws://localhost:8080`
-
-The matchmaking backend also has a `/webrtc` WebSocket path for single-service deployment. Local development currently uses the standalone `signaling-server` through `VITE_SIGNALING_WS_URL`.
+- Matchmaking backend + WebRTC signaling: `http://localhost:3000` (WebSocket at `ws://localhost:3000/webrtc`)
 
 ## Environment Setup
 
@@ -50,7 +44,6 @@ Create local `.env` files from the examples:
 ```bash
 cp basic-ui/.env.example basic-ui/.env
 cp langpal-matchmaking-backend/.env.example langpal-matchmaking-backend/.env
-cp signaling-server/.env.example signaling-server/.env
 ```
 
 ### `basic-ui/.env`
@@ -58,7 +51,7 @@ cp signaling-server/.env.example signaling-server/.env
 ```env
 VITE_MATCHMAKING_URL=http://localhost:3000
 VITE_API_URL=http://localhost:3000
-VITE_SIGNALING_WS_URL=ws://localhost:8080
+VITE_SIGNALING_WS_URL=ws://localhost:3000/webrtc
 
 VITE_SUPABASE_URL=your_supabase_project_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
@@ -81,12 +74,6 @@ CORS_ORIGIN=http://localhost:5173
 
 ```env
 CORS_ORIGIN=http://localhost:5173,https://your-vercel-url.vercel.app
-```
-
-### `signaling-server/.env`
-
-```env
-PORT=8080
 ```
 
 ## Supabase Setup
@@ -123,14 +110,11 @@ npm install
 
 cd ../langpal-matchmaking-backend
 npm install
-
-cd ../signaling-server
-npm install
 ```
 
 ## Run Locally
 
-Use three terminals.
+Use two terminals.
 
 ### Terminal 1: Frontend
 
@@ -139,21 +123,14 @@ cd basic-ui
 npm run dev
 ```
 
-### Terminal 2: Matchmaking Backend
+### Terminal 2: Matchmaking Backend + WebRTC Signaling
 
 ```bash
 cd langpal-matchmaking-backend
 npm start
 ```
 
-### Terminal 3: Signaling Server
-
-```bash
-cd signaling-server
-npm start
-```
-
-Then open `http://localhost:5173`.
+Then open `http://localhost:5173`. The backend serves both Socket.IO matchmaking and WebRTC signaling at `ws://localhost:3000/webrtc`.
 
 ## Auth Notes
 
@@ -210,9 +187,6 @@ npm run build
 
 cd ../langpal-matchmaking-backend
 npm test
-
-cd ../signaling-server
-node --check server/signaling.js
 ```
 
 ## Manual Test Checklist
@@ -236,18 +210,19 @@ Use this as the smoke test before demoing or shipping auth/matchmaking changes:
 Typical deployment shape:
 
 - `basic-ui` -> Vercel
-- `langpal-matchmaking-backend` -> Render/Railway
-- `signaling-server` -> Render/Railway, unless using the backend's embedded `/webrtc` path
+- `langpal-matchmaking-backend` -> Render/Railway (serves both Socket.IO matchmaking and WebRTC signaling at `/webrtc`)
 
-Frontend production env should point at deployed backend URLs:
+Frontend production env should point at the deployed backend:
 
 ```env
 VITE_MATCHMAKING_URL=https://your-backend.example.com
 VITE_API_URL=https://your-backend.example.com
-VITE_SIGNALING_WS_URL=wss://your-signaling.example.com
+VITE_SIGNALING_WS_URL=wss://your-backend.example.com/webrtc
 VITE_SUPABASE_URL=your_supabase_project_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
+
+`VITE_SIGNALING_WS_URL` can be omitted entirely in production if the frontend is served from the same host as the backend — the app automatically falls back to `wss://<host>/webrtc`.
 
 Backend production env must include:
 
@@ -271,4 +246,4 @@ VITE_SIGNALING_WS_URL=wss://your-backend.example.com/webrtc
 - Socket.IO matchmaking currently trusts the `userId` sent by the client. That is okay for the demo, but production should authenticate socket connections with the backend JWT.
 - `first_name` and `last_name` are legacy fields. Public identity should be `display_name`.
 - The in-memory matchmaking fallback is for backend-only testing when Supabase env vars are missing. It is not enough for the current register-first frontend.
-- `signaling-server` and backend `/webrtc` overlap. Keep both only if the team wants separate local and deployment options.
+- The standalone `signaling-server/` directory was removed. WebRTC signaling is now exclusively served by the backend at the `/webrtc` WebSocket path.
